@@ -7,6 +7,8 @@ def get_spark_session(app_name: str = "DatabricksApp") -> SparkSession:
     """
     return SparkSession.builder \
         .appName(app_name) \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.sql.adaptive.skewJoin.enabled", "true") \
         .getOrCreate()
 
 def read_data(spark: SparkSession, file_format: str = "delta", path: str = None, table_name: str = None, schema=None, options: dict = None) -> DataFrame:

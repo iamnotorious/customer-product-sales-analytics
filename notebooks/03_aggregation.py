@@ -16,35 +16,9 @@ sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analyti
 from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, read_data, write_data
 from sales_ecommerce_analytics_ingestion_utils.aggregation import create_aggregates
 
-class Paths:
-    # Used for installing the package in editable mode via notebooks
-    PROJECT_ROOT = "/Workspace/Repos/sales_analytics/customer-product-sales-analytics"
-    
-    BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
-    
-    # Source Paths (Local mapping for reference, in DBX these would be mounted)
-    CUSTOMER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Customer.xlsx"
-    PRODUCT_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Products.csv"
-    ORDER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Orders.json"
-
-    # Layer Paths
-    BRONZE_BASE = "dbfs:/mnt/delta/bronze"
-    SILVER_BASE = "dbfs:/mnt/delta/silver"
-    GOLD_BASE = "dbfs:/mnt/delta/gold"
-
-class Tables:
-    # Bronze Tables
-    BRONZE_CUSTOMERS = "sales.bronze.customers"
-    BRONZE_PRODUCTS = "sales.bronze.products"
-    BRONZE_ORDERS = "sales.bronze.orders"
-    
-    # Silver Tables
-    SILVER_CUSTOMERS = "sales.silver.customers"
-    SILVER_PRODUCTS = "sales.silver.products"
-    SILVER_ENRICHED_ORDERS = "sales.silver.enriched_orders"
-    
-    # Gold Tables
-    GOLD_PROFIT_AGGREGATES = "sales.gold.profit_aggregates"
+# Configuration
+silver_enriched_orders_table = "sales.silver.sales_ecommerce_enriched_orders"
+gold_profit_aggregates_table = "sales.gold.sales_ecommerce_profit_aggregates"
 
 spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
 
@@ -55,13 +29,8 @@ spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Read Silver Data
-
-# COMMAND ----------
-
 # Read Silver Data
-enriched_df = read_data(spark=spark, table_name=Tables.SILVER_ENRICHED_ORDERS)
+enriched_df = read_data(spark=spark, table_name=silver_enriched_orders_table)
 
 # COMMAND ----------
 
@@ -91,7 +60,7 @@ gold_aggregates = create_aggregates(
 write_data(
     df=gold_aggregates, 
     mode="overwrite", 
-    table_name=Tables.GOLD_PROFIT_AGGREGATES,
+    table_name=gold_profit_aggregates_table,
     partition_by=["year"]
 )
 
