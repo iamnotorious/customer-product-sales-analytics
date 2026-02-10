@@ -1,34 +1,51 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+from pyspark.sql.types import StructType, StructField, StringType
 from sales_ecommerce_analytics_ingestion_utils.ingestion import ingest_file
 
-# Since we cannot easily mock the filesystem specific to Databricks (dbfs:/), 
-# valid tests would mock the spark.read...load chain.
-
-def test_ingest_file_calls_spark_read(spark):
+def test_ingest_file_format_mapping(spark):
     """
-    Test that ingest_file calls the correct spark read methods.
+    Test that generic format aliases (excel, csv, json) are mapped correctly.
+    Using mocks to avoid actual file I/O.
     """
-    with patch('sales_ecommerce_analytics_ingestion_utils.ingestion.spark') as mock_spark: 
-        pass
+    mock_spark = MagicMock()
+    mock_read = mock_spark.read
+    mock_format = mock_read.format.return_value
+    mock_load = mock_format.load.return_value
     
-    # Ideally, we pass a mock spark session
+    # Test 'excel' alias -> 'com.crealytics.spark.excel'
+    ingest_file(mock_spark, "excel", "path/to/file")
+    mock_read.format.assert_called_with("com.crealytics.spark.excel")
+    
+    # Test 'csv' alias -> 'csv'
+    ingest_file(mock_spark, "csv", "path/to/file")
+    mock_read.format.assert_called_with("csv")
+
+def test_ingest_file_schema_application(spark):
+    """
+    Test that schema is applied if provided.
+    """
     mock_spark = MagicMock()
     mock_read = mock_spark.read.format.return_value
-    mock_option = mock_read.option.return_value
-    mock_schema = mock_option.schema.return_value
-    mock_load = mock_schema.load.return_value
+    mock_schema = mock_read.schema
     
-    # Simulate execution
-    # ingest_products(mock_spark, "dummy_path")
+    test_schema = StructType([StructField("col1", StringType(), True)])
     
-    # But for real unit testing with a local spark session (if available):
-    # We would need sample files. 
-    pass
+    ingest_file(mock_spark, "csv", "path/to/file", schema=test_schema)
+    
+    mock_schema.assert_called_with(test_schema)
 
-def test_ingest_orders_schema(spark):
+def test_ingest_file_options_application(spark):
     """
-    Verifies that ingest_orders uses the correct schema.
+    Test that options are applied if provided.
     """
-    # This requires an actual file or a mock that returns a DataFrame with the schema
-    pass
+    mock_spark = MagicMock()
+    mock_read = mock_spark.read.format.return_value
+    mock_options = mock_read.options
+    
+    test_options = {"header": "true", "delimiter": ";"}
+    
+    ingest_file(mock_spark, "csv", "path/to/file", options=test_options)
+    
+    mock_options.assert_called_with(**test_options)
+

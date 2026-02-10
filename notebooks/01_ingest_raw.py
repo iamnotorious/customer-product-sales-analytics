@@ -19,7 +19,6 @@ from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, w
 from sales_ecommerce_analytics_ingestion_utils.ingestion import ingest_file
 
 # Configuration Variables
-
 # Source Paths
 customer_source_path = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Customer.xlsx"
 product_source_path = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Products.csv"
@@ -37,14 +36,14 @@ product_schema = StructType([
     StructField("Sub-Category", StringType(), True),
     StructField("Product Name", StringType(), True),
     StructField("State", StringType(), True),
-    StructField("Price per product", DoubleType(), True) # Inferred as double
+    StructField("Price per product", DoubleType(), True)
 ])
 
 order_schema = StructType([
     StructField("Row ID", IntegerType(), True),
     StructField("Order ID", StringType(), True),
-    StructField("Order Date", StringType(), True), # format DD/MM/YYYY needs parsing
-    StructField("Ship Date", StringType(), True),  # format DD/MM/YYYY needs parsing
+    StructField("Order Date", StringType(), True),
+    StructField("Ship Date", StringType(), True),
     StructField("Ship Mode", StringType(), True),
     StructField("Customer ID", StringType(), True),
     StructField("Product ID", StringType(), True),
@@ -54,79 +53,57 @@ order_schema = StructType([
     StructField("Profit", DoubleType(), True)
 ])
 
-# Get Spark Session
-spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
+def ingest_customers_data(spark_session: SparkSession, source_path: str) -> DataFrame:
+    print("Ingesting Customers...")
+    return ingest_file(
+        spark=spark_session, 
+        file_format="excel", 
+        source_path=source_path,
+        options={"header": "true", "inferSchema": "true"}
+    )
 
-# COMMAND ----------
+def ingest_products_data(spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
+    print("Ingesting Products...")
+    return ingest_file(
+        spark=spark_session, 
+        file_format="csv", 
+        source_path=source_path, 
+        schema=schema,
+        options={"header": "true"}
+    )
 
-# MAGIC %md
-# MAGIC ## Ingest Customers
+def ingest_orders_data(spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
+    print("Ingesting Orders...")
+    return ingest_file(
+        spark=spark_session, 
+        file_format="json", 
+        source_path=source_path, 
+        schema=schema,
+        options={"multiLine": "true"}
+    )
 
-# COMMAND ----------
+def write_to_bronze(df: DataFrame, table_name: str):
+    write_data(
+        df=df, 
+        mode="overwrite", 
+        table_name=table_name
+    )
 
-# Read Customer Data
-print("Ingesting Customers...")
-customers_df = ingest_file(
-    spark=spark, 
-    file_format="excel", 
-    source_path=customer_source_path,
-    options={"header": "true", "inferSchema": "true"}
-)
+# Execution
+if __name__ == "__main__":
+    # Get Spark Session
+    spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
 
-# Write to Bronze (Managed Table)
-# Using Unity Catalog: sales catalog, bronze schema
-write_data(
-    df=customers_df, 
-    mode="overwrite", 
-    table_name=bronze_customers_table
-)
+    # 1. Customers
+    customers_df = ingest_customers_data(spark, customer_source_path)
+    write_to_bronze(customers_df, bronze_customers_table)
 
-# COMMAND ----------
+    # 2. Products
+    products_df = ingest_products_data(spark, product_source_path, product_schema)
+    write_to_bronze(products_df, bronze_products_table)
 
-# MAGIC %md
-# MAGIC ## Ingest Products
+    # 3. Orders
+    orders_df = ingest_orders_data(spark, order_source_path, order_schema)
+    write_to_bronze(orders_df, bronze_orders_table)
 
-# COMMAND ----------
-
-# Read Product Data
-print("Ingesting Products...")
-products_df = ingest_file(
-    spark=spark, 
-    file_format="csv", 
-    source_path=product_source_path, 
-    schema=product_schema,
-    options={"header": "true"}
-)
-
-# Write to Bronze (Managed Table)
-write_data(
-    df=products_df, 
-    mode="overwrite", 
-    table_name=bronze_products_table
-)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Ingest Orders
-
-# COMMAND ----------
-
-# Read Orders Data
-print("Ingesting Orders...")
-orders_df = ingest_file(
-    spark=spark, 
-    file_format="json", 
-    source_path=order_source_path, 
-    schema=order_schema,
-    options={"multiLine": "true"}
-)
-
-# Write to Bronze (Managed Table)
-write_data(
-    df=orders_df, 
-    mode="overwrite", 
-    table_name=bronze_orders_table
-)
-
-print("Ingestion Complete.")
+    print("Ingestion Complete.")

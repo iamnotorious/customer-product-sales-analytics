@@ -20,48 +20,32 @@ from sales_ecommerce_analytics_ingestion_utils.aggregation import create_aggrega
 silver_enriched_orders_table = "sales.silver.sales_ecommerce_enriched_orders"
 gold_profit_aggregates_table = "sales.gold.sales_ecommerce_profit_aggregates"
 
-spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
+def read_silver_data(spark_session: SparkSession) -> DataFrame:
+    return read_data(spark=spark_session, table_name=silver_enriched_orders_table)
 
-# COMMAND ----------
+def calculate_profit_aggregates(df: DataFrame) -> DataFrame:
+    return create_aggregates(
+        df=df,
+        group_by_cols=["year", "category", "sub_category", "customer_name"],
+        agg_col="profit",
+        alias_col="total_profit",
+        round_places=2
+    )
 
-# MAGIC %md
-# MAGIC ## Read Silver Data
+def write_to_gold(df: DataFrame):
+    write_data(
+        df=df, 
+        mode="overwrite", 
+        table_name=gold_profit_aggregates_table,
+        partition_by=["year"]
+    )
 
-# COMMAND ----------
+# Execution
+if __name__ == "__main__":
+    spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
+    
+    enriched_df = read_silver_data(spark)
+    gold_aggregates = calculate_profit_aggregates(enriched_df)
+    write_to_gold(gold_aggregates)
 
-# Read Silver Data
-enriched_df = read_data(spark=spark, table_name=silver_enriched_orders_table)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Create Aggregates
-
-# COMMAND ----------
-
-# Create Aggregate Table: Profit by Year, Product Category, Sub Category, Customer
-# Dimensions: year, category, sub_category, customer_name
-# Metric: profit
-gold_aggregates = create_aggregates(
-    df=enriched_df,
-    group_by_cols=["year", "category", "sub_category", "customer_name"],
-    agg_col="profit",
-    alias_col="total_profit",
-    round_places=2
-)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Write to Gold
-
-# COMMAND ----------
-
-write_data(
-    df=gold_aggregates, 
-    mode="overwrite", 
-    table_name=gold_profit_aggregates_table,
-    partition_by=["year"]
-)
-
-print("Aggregation Complete.")
+    print("Aggregation Complete.")

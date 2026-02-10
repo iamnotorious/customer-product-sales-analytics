@@ -1,47 +1,36 @@
 import pytest
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
-from sales_ecommerce_analytics_ingestion_utils.aggregation import create_profit_aggregates, get_profit_by_year
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType
+from sales_ecommerce_analytics_ingestion_utils.aggregation import create_aggregates
 
-def test_create_profit_aggregates(spark):
+def test_create_aggregates(spark):
     """
-    Test aggregation logic.
+    Test generic aggregation logic.
     """
-    # Mock Data
+    # Create sample data
     data = [
-        (2016, "Cat1", "Sub1", "Cust1", 100.0),
-        (2016, "Cat1", "Sub1", "Cust1", 50.5),
-        (2017, "Cat2", "Sub2", "Cust2", 200.0)
+        ("2023", "Electronics", "Phones", "Alice", 100.0),
+        ("2023", "Electronics", "Phones", "Alice", 200.0),
+        ("2023", "Furniture", "Chairs", "Bob", 50.0)
     ]
     schema = StructType([
-        StructField("Year", IntegerType(), True),
-        StructField("Category", StringType(), True),
-        StructField("Sub-Category", StringType(), True),
-        StructField("Customer Name", StringType(), True),
-        StructField("Profit", DoubleType(), True)
+        StructField("year", StringType(), True),
+        StructField("category", StringType(), True),
+        StructField("sub_category", StringType(), True),
+        StructField("customer_name", StringType(), True),
+        StructField("profit", DoubleType(), True)
     ])
     df = spark.createDataFrame(data, schema)
     
-    agged = create_profit_aggregates(df)
-    rows = agged.collect()
+    # Run aggregation
+    result = create_aggregates(
+        df, 
+        group_by_cols=["year", "category"], 
+        agg_col="profit", 
+        alias_col="total_profit"
+    )
     
-    # Expected: 
-    # 2016, Cat1, Sub1, Cust1 -> 150.5
-    # 2017, Cat2, Sub2, Cust2 -> 200.0
-    
-    assert len(rows) == 2
-    r_2016 = [r for r in rows if r["Year"] == 2016][0]
-    assert r_2016["Total Profit"] == 150.5
-
-def test_profit_by_year(spark):
-    data = [(2016, 100.0), (2016, 50.0), (2017, 200.0)]
-    schema = StructType([
-        StructField("Year", IntegerType(), True),
-        StructField("Profit", DoubleType(), True)
-    ])
-    df = spark.createDataFrame(data, schema)
-    
-    res = get_profit_by_year(df)
-    rows = res.collect()
-    
-    r_2016 = [r for r in rows if r["Year"] == 2016][0]
-    assert r_2016["Total Profit"] == 150.0  
+    # Assertions
+    assert result.count() == 2
+    # Check Alice's category total
+    alice_row = result.filter(result.category == "Electronics").first()
+    assert alice_row["total_profit"] == 300.0
