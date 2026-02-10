@@ -12,6 +12,16 @@
 
 # COMMAND ----------
 
+# Install local package
+# MAGIC %pip install -e /Workspace/Repos/sales_analytics/customer-product-sales-analytics
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
+from databricks_app.utils import get_spark_session, read_data, write_data
 from databricks_app.transformation import clean_dataset, parse_order_dates, enrich_orders
 from databricks_app.config import Paths
 

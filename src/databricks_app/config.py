@@ -1,6 +1,9 @@
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, DateType
 
 class Paths:
+    # Used for installing the package in editable mode via notebooks
+    PROJECT_ROOT = "/Workspace/Repos/sales_analytics/customer-product-sales-analytics"
+    
     BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
     
     # Source Paths (Local mapping for reference, in DBX these would be mounted)
