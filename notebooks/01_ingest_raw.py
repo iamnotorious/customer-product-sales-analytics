@@ -1,0 +1,62 @@
+# Databricks notebook source
+# MAGIC %md
+# MAGIC # 01 Ingest Raw Data (Bronze Layer)
+# MAGIC 
+# MAGIC This notebook ingests raw data from sources (Excel, CSV, JSON) and writes them to the Bronze layer in Delta format.
+
+# COMMAND ----------
+
+# Import libraries
+from pyspark.sql import SparkSession
+from databricks_app.utils import get_spark_session, write_data
+from databricks_app.ingestion import ingest_customers, ingest_products, ingest_orders
+from databricks_app.config import Paths
+
+# Get Spark Session
+spark = get_spark_session("IngestionJob")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Ingest Customers
+
+# COMMAND ----------
+
+# Read Customer Data
+print("Ingesting Customers...")
+customers_df = ingest_customers(spark, Paths.CUSTOMER_SOURCE)
+
+# Write to Bronze
+write_data(customers_df, "delta", "overwrite", f"{Paths.BRONZE_BASE}/customers")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Ingest Products
+
+# COMMAND ----------
+
+# Read Product Data
+print("Ingesting Products...")
+products_df = ingest_products(spark, Paths.PRODUCT_SOURCE)
+
+# Write to Bronze
+write_data(products_df, "delta", "overwrite", f"{Paths.BRONZE_BASE}/products")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Ingest Orders
+
+# COMMAND ----------
+
+# Read Orders Data
+print("Ingesting Orders...")
+orders_df = ingest_orders(spark, Paths.ORDER_SOURCE)
+
+# Write to Bronze
+# Partitioning by Order Date (or Year/Month) is often good, but raw might just be flat.
+# Let's keep it simple for Bronze - strict copy of source.
+write_data(orders_df, "delta", "overwrite", f"{Paths.BRONZE_BASE}/orders")
+
+print("Ingestion Complete.")
