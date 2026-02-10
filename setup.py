@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="sales_ecommerce_analytics_ingestion_utils",
+    name="sales_analytics",
     version="0.1.0",
-    description="Databricks Data Engineering Project",
+    description="Sales Data Engineering Pipeline for E-commerce Analytics",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
