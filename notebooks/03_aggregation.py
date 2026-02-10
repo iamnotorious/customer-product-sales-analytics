@@ -23,9 +23,9 @@ class Paths:
     BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
     
     # Source Paths (Local mapping for reference, in DBX these would be mounted)
-    CUSTOMER_SOURCE = "dbfs:/FileStore/tables/data/Customer.xlsx"
-    PRODUCT_SOURCE = "dbfs:/FileStore/tables/data/Products.csv"
-    ORDER_SOURCE = "dbfs:/FileStore/tables/data/Orders.json"
+    CUSTOMER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Customer.xlsx"
+    PRODUCT_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Products.csv"
+    ORDER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Orders.json"
 
     # Layer Paths
     BRONZE_BASE = "dbfs:/mnt/delta/bronze"
