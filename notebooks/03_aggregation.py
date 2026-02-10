@@ -19,7 +19,12 @@ from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, r
 from sales_ecommerce_analytics_ingestion_utils.aggregation import create_profit_aggregates
 from sales_ecommerce_analytics_ingestion_utils.config import Paths
 
-spark = get_spark_session("AggregationJob")
+import sys
+# Fallback if editable install path isn't picked up immediately
+if "/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src" not in sys.path:
+    sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
+
+spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
 
 # COMMAND ----------
 

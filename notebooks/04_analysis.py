@@ -18,7 +18,12 @@ dbutils.library.restartPython()
 from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, read_data
 from sales_ecommerce_analytics_ingestion_utils.config import Paths
 
-spark = get_spark_session("AnalysisJob")
+import sys
+# Fallback if editable install path isn't picked up immediately
+if "/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src" not in sys.path:
+    sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
+
+spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_ANALYSIS_JOB")
 
 # Read Silver Enriched Data (Single Source of Truth for ad-hoc analysis)
 enriched_df = read_data(spark, "delta", f"{Paths.SILVER_BASE}/enriched_orders")

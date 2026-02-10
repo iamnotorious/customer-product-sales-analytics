@@ -15,6 +15,13 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
+import sys
+import os
+
+# Explicitly add the src directory to path in case editable install is slow to register
+# Only necessary if you get ModuleNotFound errors
+sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
+
 # Import libraries
 from pyspark.sql import SparkSession
 from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, write_data
@@ -22,7 +29,7 @@ from sales_ecommerce_analytics_ingestion_utils.ingestion import ingest_customers
 from sales_ecommerce_analytics_ingestion_utils.config import Paths
 
 # Get Spark Session
-spark = get_spark_session("IngestionJob")
+spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
 
 # COMMAND ----------
 

@@ -25,7 +25,13 @@ from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, r
 from sales_ecommerce_analytics_ingestion_utils.transformation import clean_dataset, parse_order_dates, enrich_orders
 from sales_ecommerce_analytics_ingestion_utils.config import Paths
 
-spark = get_spark_session("EnrichmentJob")
+import sys
+# Fallback if editable install path isn't picked up immediately
+if "/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src" not in sys.path:
+    sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
+from sales_ecommerce_analytics_ingestion_utils.config import Paths
+
+spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_ENRICHMENT_JOB")
 
 # COMMAND ----------
 
