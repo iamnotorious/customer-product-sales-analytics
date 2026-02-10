@@ -15,8 +15,8 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
-from databricks_app.utils import get_spark_session, read_data
-from databricks_app.config import Paths
+from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, read_data
+from sales_ecommerce_analytics_ingestion_utils.config import Paths
 
 spark = get_spark_session("AnalysisJob")
 

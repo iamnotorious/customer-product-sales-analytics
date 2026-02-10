@@ -1,6 +1,6 @@
 import pytest
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
-from databricks_app.aggregation import create_profit_aggregates, get_profit_by_year
+from sales_ecommerce_analytics_ingestion_utils.aggregation import create_profit_aggregates, get_profit_by_year
 
 def test_create_profit_aggregates(spark):
     """

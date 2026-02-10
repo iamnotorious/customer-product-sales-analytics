@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from databricks_app.ingestion import ingest_customers, ingest_products, ingest_orders
+from sales_ecommerce_analytics_ingestion_utils.ingestion import ingest_customers, ingest_products, ingest_orders
 
 # Since we cannot easily mock the filesystem specific to Databricks (dbfs:/), 
 # valid tests would mock the spark.read...load chain.
@@ -9,7 +9,7 @@ def test_ingest_products_calls_spark_read(spark):
     """
     Test that ingest_products calls the correct spark read methods.
     """
-    with patch('databricks_app.ingestion.spark') as mock_spark: # This won't work directly as spark is passed ind arg
+    with patch('sales_ecommerce_analytics_ingestion_utils.ingestion.spark') as mock_spark: # This won't work directly as spark is passed ind arg
         pass
     
     # Ideally, we pass a mock spark session

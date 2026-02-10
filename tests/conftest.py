@@ -8,7 +8,7 @@ def spark():
     """
     spark = SparkSession.builder \
         .master("local[*]") \
-        .appName("sales_ecommerce_analytics") \
+        .appName("sales_ecommerce_analytics_ingestion_utils") \
         .getOrCreate()
     yield spark
     spark.stop()

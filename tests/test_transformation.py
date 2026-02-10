@@ -1,7 +1,7 @@
 import pytest
 from pyspark.sql import Row
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
-from databricks_app.transformation import clean_text, handle_nulls, clean_dataset, enrich_orders, parse_order_dates
+from sales_ecommerce_analytics_ingestion_utils.transformation import clean_text, handle_nulls, clean_dataset, enrich_orders, parse_order_dates
 
 def test_clean_text(spark):
     """

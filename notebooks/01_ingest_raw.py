@@ -17,9 +17,9 @@ dbutils.library.restartPython()
 
 # Import libraries
 from pyspark.sql import SparkSession
-from databricks_app.utils import get_spark_session, write_data
-from databricks_app.ingestion import ingest_customers, ingest_products, ingest_orders
-from databricks_app.config import Paths
+from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, write_data
+from sales_ecommerce_analytics_ingestion_utils.ingestion import ingest_customers, ingest_products, ingest_orders
+from sales_ecommerce_analytics_ingestion_utils.config import Paths
 
 # Get Spark Session
 spark = get_spark_session("IngestionJob")
