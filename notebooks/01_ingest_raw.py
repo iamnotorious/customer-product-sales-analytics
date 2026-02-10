@@ -18,58 +18,41 @@ from pyspark.sql.types import StructType, StructField, StringType, DoubleType, I
 from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, write_data
 from sales_ecommerce_analytics_ingestion_utils.ingestion import ingest_file
 
-class Paths:
-    # Used for installing the package in editable mode via notebooks
-    PROJECT_ROOT = "/Workspace/Repos/sales_analytics/customer-product-sales-analytics"
-    
-    BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
-    
-    # Source Paths (Local mapping for reference, in DBX these would be mounted)
-    CUSTOMER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Customer.xlsx"
-    PRODUCT_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Products.csv"
-    ORDER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Orders.json"
+# Configuration Variables
 
-    # Layer Paths
-    BRONZE_BASE = "dbfs:/mnt/delta/bronze"
-    SILVER_BASE = "dbfs:/mnt/delta/silver"
-    GOLD_BASE = "dbfs:/mnt/delta/gold"
+# Source Paths
+customer_source_path = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Customer.xlsx"
+product_source_path = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Products.csv"
+order_source_path = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Orders.json"
 
-class Schemas:
-    # Defined based on inspection of Products.csv and Orders.json
-    
-    PRODUCT_SCHEMA = StructType([
-        StructField("Product ID", StringType(), True),
-        StructField("Category", StringType(), True),
-        StructField("Sub-Category", StringType(), True),
-        StructField("Product Name", StringType(), True),
-        StructField("State", StringType(), True),
-        StructField("Price per product", DoubleType(), True) # Inferred as double
-    ])
+# Table Names
+bronze_customers_table = "sales.bronze.sales_ecommerce_customers"
+bronze_products_table = "sales.bronze.sales_ecommerce_products"
+bronze_orders_table = "sales.bronze.sales_ecommerce_orders"
 
-    ORDER_SCHEMA = StructType([
-        StructField("Row ID", IntegerType(), True),
-        StructField("Order ID", StringType(), True),
-        StructField("Order Date", StringType(), True), # format DD/MM/YYYY needs parsing
-        StructField("Ship Date", StringType(), True),  # format DD/MM/YYYY needs parsing
-        StructField("Ship Mode", StringType(), True),
-        StructField("Customer ID", StringType(), True),
-        StructField("Product ID", StringType(), True),
-        StructField("Quantity", IntegerType(), True),
-        StructField("Price", DoubleType(), True),
-        StructField("Discount", DoubleType(), True),
-        StructField("Profit", DoubleType(), True)
-    ])
+# Schemas
+product_schema = StructType([
+    StructField("Product ID", StringType(), True),
+    StructField("Category", StringType(), True),
+    StructField("Sub-Category", StringType(), True),
+    StructField("Product Name", StringType(), True),
+    StructField("State", StringType(), True),
+    StructField("Price per product", DoubleType(), True) # Inferred as double
+])
 
-    # Customer schema inferred from typical domain usage
-    CUSTOMER_SCHEMA = StructType([
-        StructField("Customer ID", StringType(), True),
-        StructField("Customer Name", StringType(), True),
-        StructField("Country", StringType(), True),
-        StructField("City", StringType(), True),
-        StructField("State", StringType(), True),
-        StructField("Postal Code", StringType(), True),
-        StructField("Region", StringType(), True)
-    ])
+order_schema = StructType([
+    StructField("Row ID", IntegerType(), True),
+    StructField("Order ID", StringType(), True),
+    StructField("Order Date", StringType(), True), # format DD/MM/YYYY needs parsing
+    StructField("Ship Date", StringType(), True),  # format DD/MM/YYYY needs parsing
+    StructField("Ship Mode", StringType(), True),
+    StructField("Customer ID", StringType(), True),
+    StructField("Product ID", StringType(), True),
+    StructField("Quantity", IntegerType(), True),
+    StructField("Price", DoubleType(), True),
+    StructField("Discount", DoubleType(), True),
+    StructField("Profit", DoubleType(), True)
+])
 
 # Get Spark Session
 spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
@@ -86,15 +69,16 @@ print("Ingesting Customers...")
 customers_df = ingest_file(
     spark=spark, 
     file_format="excel", 
-    source_path=Paths.CUSTOMER_SOURCE,
+    source_path=customer_source_path,
     options={"header": "true", "inferSchema": "true"}
 )
 
 # Write to Bronze (Managed Table)
+# Using Unity Catalog: sales catalog, bronze schema
 write_data(
     df=customers_df, 
     mode="overwrite", 
-    table_name="bronze_customers"
+    table_name=bronze_customers_table
 )
 
 # COMMAND ----------
@@ -109,8 +93,8 @@ print("Ingesting Products...")
 products_df = ingest_file(
     spark=spark, 
     file_format="csv", 
-    source_path=Paths.PRODUCT_SOURCE, 
-    schema=Schemas.PRODUCT_SCHEMA,
+    source_path=product_source_path, 
+    schema=product_schema,
     options={"header": "true"}
 )
 
@@ -118,7 +102,7 @@ products_df = ingest_file(
 write_data(
     df=products_df, 
     mode="overwrite", 
-    table_name="bronze_products"
+    table_name=bronze_products_table
 )
 
 # COMMAND ----------
@@ -133,8 +117,8 @@ print("Ingesting Orders...")
 orders_df = ingest_file(
     spark=spark, 
     file_format="json", 
-    source_path=Paths.ORDER_SOURCE, 
-    schema=Schemas.ORDER_SCHEMA,
+    source_path=order_source_path, 
+    schema=order_schema,
     options={"multiLine": "true"}
 )
 
@@ -142,7 +126,7 @@ orders_df = ingest_file(
 write_data(
     df=orders_df, 
     mode="overwrite", 
-    table_name="bronze_orders"
+    table_name=bronze_orders_table
 )
 
 print("Ingestion Complete.")

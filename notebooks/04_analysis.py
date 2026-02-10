@@ -15,28 +15,15 @@ sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analyti
 
 from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, read_data
 
-class Paths:
-    # Used for installing the package in editable mode via notebooks
-    PROJECT_ROOT = "/Workspace/Repos/sales_analytics/customer-product-sales-analytics"
-    
-    BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
-    
-    # Source Paths (Local mapping for reference, in DBX these would be mounted)
-    CUSTOMER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Customer.xlsx"
-    PRODUCT_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Products.csv"
-    ORDER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Orders.json"
-
-    # Layer Paths
-    BRONZE_BASE = "dbfs:/mnt/delta/bronze"
-    SILVER_BASE = "dbfs:/mnt/delta/silver"
-    GOLD_BASE = "dbfs:/mnt/delta/gold"
+# Configuration
+silver_enriched_orders_table = "sales.silver.sales_ecommerce_enriched_orders"
 
 spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_ANALYSIS_JOB")
 
 # COMMAND ----------
 
 # Read Silver Enriched Data (Single Source of Truth for ad-hoc analysis)
-enriched_df = read_data(spark=spark, table_name="silver_enriched_orders")
+enriched_df = read_data(spark=spark, table_name=silver_enriched_orders_table)
 
 # Create Temp View for SQL
 enriched_df.createOrReplaceTempView("enriched_orders")

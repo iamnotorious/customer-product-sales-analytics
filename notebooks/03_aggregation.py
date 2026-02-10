@@ -32,6 +32,20 @@ class Paths:
     SILVER_BASE = "dbfs:/mnt/delta/silver"
     GOLD_BASE = "dbfs:/mnt/delta/gold"
 
+class Tables:
+    # Bronze Tables
+    BRONZE_CUSTOMERS = "sales.bronze.customers"
+    BRONZE_PRODUCTS = "sales.bronze.products"
+    BRONZE_ORDERS = "sales.bronze.orders"
+    
+    # Silver Tables
+    SILVER_CUSTOMERS = "sales.silver.customers"
+    SILVER_PRODUCTS = "sales.silver.products"
+    SILVER_ENRICHED_ORDERS = "sales.silver.enriched_orders"
+    
+    # Gold Tables
+    GOLD_PROFIT_AGGREGATES = "sales.gold.profit_aggregates"
+
 spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
 
 # COMMAND ----------
@@ -47,7 +61,7 @@ spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
 # COMMAND ----------
 
 # Read Silver Data
-enriched_df = read_data(spark=spark, table_name="silver_enriched_orders")
+enriched_df = read_data(spark=spark, table_name=Tables.SILVER_ENRICHED_ORDERS)
 
 # COMMAND ----------
 
@@ -77,7 +91,8 @@ gold_aggregates = create_aggregates(
 write_data(
     df=gold_aggregates, 
     mode="overwrite", 
-    table_name="gold_profit_aggregates"
+    table_name=Tables.GOLD_PROFIT_AGGREGATES,
+    partition_by=["year"]
 )
 
 print("Aggregation Complete.")

@@ -28,21 +28,14 @@ from sales_ecommerce_analytics_ingestion_utils.transformation import (
     add_year_col
 )
 
-class Paths:
-    # Used for installing the package in editable mode via notebooks
-    PROJECT_ROOT = "/Workspace/Repos/sales_analytics/customer-product-sales-analytics"
-    
-    BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
-    
-    # Source Paths (Local mapping for reference, in DBX these would be mounted)
-    CUSTOMER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Customer.xlsx"
-    PRODUCT_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Products.csv"
-    ORDER_SOURCE = "/Volumes/sales/raw/sales_ecommerce_analytics_data/data/Orders.json"
+# Configuration Rules
+bronze_customers_table = "sales.bronze.sales_ecommerce_customers"
+bronze_products_table = "sales.bronze.sales_ecommerce_products"
+bronze_orders_table = "sales.bronze.sales_ecommerce_orders"
 
-    # Layer Paths
-    BRONZE_BASE = "dbfs:/mnt/delta/bronze"
-    SILVER_BASE = "dbfs:/mnt/delta/silver"
-    GOLD_BASE = "dbfs:/mnt/delta/gold"
+silver_customers_table = "sales.silver.sales_ecommerce_customers"
+silver_products_table = "sales.silver.sales_ecommerce_products"
+silver_enriched_orders_table = "sales.silver.sales_ecommerce_enriched_orders"
 
 spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_ENRICHMENT_JOB")
 
@@ -53,14 +46,9 @@ spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_ENRICHMENT_JOB")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Read Bronze Data
-
-# COMMAND ----------
-
-bronze_cust = read_data(spark=spark, table_name="bronze_customers")
-bronze_prod = read_data(spark=spark, table_name="bronze_products")
-bronze_ord = read_data(spark=spark, table_name="bronze_orders")
+bronze_cust = read_data(spark=spark, table_name=bronze_customers_table)
+bronze_prod = read_data(spark=spark, table_name=bronze_products_table)
+bronze_ord = read_data(spark=spark, table_name=bronze_orders_table)
 
 # Standardize Columns to Snake Case
 bronze_cust = to_snake_case(df=bronze_cust)
@@ -167,19 +155,19 @@ enriched_df = enriched_df.select(final_columns)
 write_data(
     df=silver_cust, 
     mode="overwrite", 
-    table_name="silver_customers"
+    table_name=silver_customers_table
 )
 write_data(
     df=silver_prod, 
     mode="overwrite", 
-    table_name="silver_products"
+    table_name=silver_products_table
 )
 
 # Write Enriched Data to Silver
 write_data(
     df=enriched_df, 
     mode="overwrite", 
-    table_name="silver_enriched_orders", 
+    table_name=silver_enriched_orders_table, 
     partition_by=["year"]
 )
 
