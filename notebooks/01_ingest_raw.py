@@ -6,27 +6,70 @@
 
 # COMMAND ----------
 
-# Install local package
-# MAGIC %pip install -e /Workspace/Repos/sales_analytics/customer-product-sales-analytics
-
-# COMMAND ----------
-
-dbutils.library.restartPython()
-
-# COMMAND ----------
-
 import sys
 import os
 
-# Explicitly add the src directory to path in case editable install is slow to register
-# Only necessary if you get ModuleNotFound errors
+# Add the src directory to path
 sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
 
 # Import libraries
 from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, DateType
 from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, write_data
-from sales_ecommerce_analytics_ingestion_utils.ingestion import ingest_customers, ingest_products, ingest_orders
-from sales_ecommerce_analytics_ingestion_utils.config import Paths
+from sales_ecommerce_analytics_ingestion_utils.ingestion import ingest_file
+
+class Paths:
+    # Used for installing the package in editable mode via notebooks
+    PROJECT_ROOT = "/Workspace/Repos/sales_analytics/customer-product-sales-analytics"
+    
+    BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
+    
+    # Source Paths (Local mapping for reference, in DBX these would be mounted)
+    CUSTOMER_SOURCE = "dbfs:/FileStore/tables/data/Customer.xlsx"
+    PRODUCT_SOURCE = "dbfs:/FileStore/tables/data/Products.csv"
+    ORDER_SOURCE = "dbfs:/FileStore/tables/data/Orders.json"
+
+    # Layer Paths
+    BRONZE_BASE = "dbfs:/mnt/delta/bronze"
+    SILVER_BASE = "dbfs:/mnt/delta/silver"
+    GOLD_BASE = "dbfs:/mnt/delta/gold"
+
+class Schemas:
+    # Defined based on inspection of Products.csv and Orders.json
+    
+    PRODUCT_SCHEMA = StructType([
+        StructField("Product ID", StringType(), True),
+        StructField("Category", StringType(), True),
+        StructField("Sub-Category", StringType(), True),
+        StructField("Product Name", StringType(), True),
+        StructField("State", StringType(), True),
+        StructField("Price per product", DoubleType(), True) # Inferred as double
+    ])
+
+    ORDER_SCHEMA = StructType([
+        StructField("Row ID", IntegerType(), True),
+        StructField("Order ID", StringType(), True),
+        StructField("Order Date", StringType(), True), # format DD/MM/YYYY needs parsing
+        StructField("Ship Date", StringType(), True),  # format DD/MM/YYYY needs parsing
+        StructField("Ship Mode", StringType(), True),
+        StructField("Customer ID", StringType(), True),
+        StructField("Product ID", StringType(), True),
+        StructField("Quantity", IntegerType(), True),
+        StructField("Price", DoubleType(), True),
+        StructField("Discount", DoubleType(), True),
+        StructField("Profit", DoubleType(), True)
+    ])
+
+    # Customer schema inferred from typical domain usage
+    CUSTOMER_SCHEMA = StructType([
+        StructField("Customer ID", StringType(), True),
+        StructField("Customer Name", StringType(), True),
+        StructField("Country", StringType(), True),
+        StructField("City", StringType(), True),
+        StructField("State", StringType(), True),
+        StructField("Postal Code", StringType(), True),
+        StructField("Region", StringType(), True)
+    ])
 
 # Get Spark Session
 spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
@@ -40,10 +83,19 @@ spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
 
 # Read Customer Data
 print("Ingesting Customers...")
-customers_df = ingest_customers(spark, Paths.CUSTOMER_SOURCE)
+customers_df = ingest_file(
+    spark=spark, 
+    file_format="excel", 
+    source_path=Paths.CUSTOMER_SOURCE,
+    options={"header": "true", "inferSchema": "true"}
+)
 
-# Write to Bronze
-write_data(customers_df, "delta", "overwrite", f"{Paths.BRONZE_BASE}/customers")
+# Write to Bronze (Managed Table)
+write_data(
+    df=customers_df, 
+    mode="overwrite", 
+    table_name="bronze_customers"
+)
 
 # COMMAND ----------
 
@@ -54,10 +106,20 @@ write_data(customers_df, "delta", "overwrite", f"{Paths.BRONZE_BASE}/customers")
 
 # Read Product Data
 print("Ingesting Products...")
-products_df = ingest_products(spark, Paths.PRODUCT_SOURCE)
+products_df = ingest_file(
+    spark=spark, 
+    file_format="csv", 
+    source_path=Paths.PRODUCT_SOURCE, 
+    schema=Schemas.PRODUCT_SCHEMA,
+    options={"header": "true"}
+)
 
-# Write to Bronze
-write_data(products_df, "delta", "overwrite", f"{Paths.BRONZE_BASE}/products")
+# Write to Bronze (Managed Table)
+write_data(
+    df=products_df, 
+    mode="overwrite", 
+    table_name="bronze_products"
+)
 
 # COMMAND ----------
 
@@ -68,11 +130,19 @@ write_data(products_df, "delta", "overwrite", f"{Paths.BRONZE_BASE}/products")
 
 # Read Orders Data
 print("Ingesting Orders...")
-orders_df = ingest_orders(spark, Paths.ORDER_SOURCE)
+orders_df = ingest_file(
+    spark=spark, 
+    file_format="json", 
+    source_path=Paths.ORDER_SOURCE, 
+    schema=Schemas.ORDER_SCHEMA,
+    options={"multiLine": "true"}
+)
 
-# Write to Bronze
-# Partitioning by Order Date (or Year/Month) is often good, but raw might just be flat.
-# Let's keep it simple for Bronze - strict copy of source.
-write_data(orders_df, "delta", "overwrite", f"{Paths.BRONZE_BASE}/orders")
+# Write to Bronze (Managed Table)
+write_data(
+    df=orders_df, 
+    mode="overwrite", 
+    table_name="bronze_orders"
+)
 
 print("Ingestion Complete.")

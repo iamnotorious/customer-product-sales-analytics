@@ -7,29 +7,47 @@
 # COMMAND ----------
 
 # Install local package
-# MAGIC %pip install -e /Workspace/Repos/sales_analytics/customer-product-sales-analytics
+import sys
+import os
 
-# COMMAND ----------
-
-dbutils.library.restartPython()
-
-# COMMAND ----------
+# Add the src directory to path
+sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
 
 from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, read_data, write_data
-from sales_ecommerce_analytics_ingestion_utils.aggregation import create_profit_aggregates
-from sales_ecommerce_analytics_ingestion_utils.config import Paths
+from sales_ecommerce_analytics_ingestion_utils.aggregation import create_aggregates
 
-import sys
-# Fallback if editable install path isn't picked up immediately
-if "/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src" not in sys.path:
-    sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
+class Paths:
+    # Used for installing the package in editable mode via notebooks
+    PROJECT_ROOT = "/Workspace/Repos/sales_analytics/customer-product-sales-analytics"
+    
+    BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
+    
+    # Source Paths (Local mapping for reference, in DBX these would be mounted)
+    CUSTOMER_SOURCE = "dbfs:/FileStore/tables/data/Customer.xlsx"
+    PRODUCT_SOURCE = "dbfs:/FileStore/tables/data/Products.csv"
+    ORDER_SOURCE = "dbfs:/FileStore/tables/data/Orders.json"
 
-spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
+    # Layer Paths
+    BRONZE_BASE = "dbfs:/mnt/delta/bronze"
+    SILVER_BASE = "dbfs:/mnt/delta/silver"
+    GOLD_BASE = "dbfs:/mnt/delta/gold"
+
+spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Read Silver Data
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Read Silver Data
 
 # COMMAND ----------
 
 # Read Silver Data
-enriched_df = read_data(spark, "delta", f"{Paths.SILVER_BASE}/enriched_orders")
+enriched_df = read_data(spark=spark, table_name="silver_enriched_orders")
 
 # COMMAND ----------
 
@@ -39,7 +57,15 @@ enriched_df = read_data(spark, "delta", f"{Paths.SILVER_BASE}/enriched_orders")
 # COMMAND ----------
 
 # Create Aggregate Table: Profit by Year, Product Category, Sub Category, Customer
-gold_aggregates = create_profit_aggregates(enriched_df)
+# Dimensions: year, category, sub_category, customer_name
+# Metric: profit
+gold_aggregates = create_aggregates(
+    df=enriched_df,
+    group_by_cols=["year", "category", "sub_category", "customer_name"],
+    agg_col="profit",
+    alias_col="total_profit",
+    round_places=2
+)
 
 # COMMAND ----------
 
@@ -48,6 +74,10 @@ gold_aggregates = create_profit_aggregates(enriched_df)
 
 # COMMAND ----------
 
-write_data(gold_aggregates, "delta", "overwrite", f"{Paths.GOLD_BASE}/profit_aggregates")
+write_data(
+    df=gold_aggregates, 
+    mode="overwrite", 
+    table_name="gold_profit_aggregates"
+)
 
 print("Aggregation Complete.")

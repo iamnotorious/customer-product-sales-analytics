@@ -12,26 +12,39 @@
 
 # COMMAND ----------
 
-# Install local package
-# MAGIC %pip install -e /Workspace/Repos/sales_analytics/customer-product-sales-analytics
+import sys
+import os
 
-# COMMAND ----------
-
-dbutils.library.restartPython()
-
-# COMMAND ----------
+# Add the src directory to path
+sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
 
 from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, read_data, write_data
-from sales_ecommerce_analytics_ingestion_utils.transformation import clean_dataset, parse_order_dates, enrich_orders
-from sales_ecommerce_analytics_ingestion_utils.config import Paths
+from sales_ecommerce_analytics_ingestion_utils.transformation import (
+    clean_dataset, 
+    to_snake_case, 
+    join_dataframes, 
+    calculate_metric, 
+    parse_date_col, 
+    add_year_col
+)
 
-import sys
-# Fallback if editable install path isn't picked up immediately
-if "/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src" not in sys.path:
-    sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
-from sales_ecommerce_analytics_ingestion_utils.config import Paths
+class Paths:
+    # Used for installing the package in editable mode via notebooks
+    PROJECT_ROOT = "/Workspace/Repos/sales_analytics/customer-product-sales-analytics"
+    
+    BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
+    
+    # Source Paths (Local mapping for reference, in DBX these would be mounted)
+    CUSTOMER_SOURCE = "dbfs:/FileStore/tables/data/Customer.xlsx"
+    PRODUCT_SOURCE = "dbfs:/FileStore/tables/data/Products.csv"
+    ORDER_SOURCE = "dbfs:/FileStore/tables/data/Orders.json"
 
-spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_ENRICHMENT_JOB")
+    # Layer Paths
+    BRONZE_BASE = "dbfs:/mnt/delta/bronze"
+    SILVER_BASE = "dbfs:/mnt/delta/silver"
+    GOLD_BASE = "dbfs:/mnt/delta/gold"
+
+spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_ENRICHMENT_JOB")
 
 # COMMAND ----------
 
@@ -40,9 +53,19 @@ spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_ENRICHMENT_JOB")
 
 # COMMAND ----------
 
-bronze_cust = read_data(spark, "delta", f"{Paths.BRONZE_BASE}/customers")
-bronze_prod = read_data(spark, "delta", f"{Paths.BRONZE_BASE}/products")
-bronze_ord = read_data(spark, "delta", f"{Paths.BRONZE_BASE}/orders")
+# MAGIC %md
+# MAGIC ## Read Bronze Data
+
+# COMMAND ----------
+
+bronze_cust = read_data(spark=spark, table_name="bronze_customers")
+bronze_prod = read_data(spark=spark, table_name="bronze_products")
+bronze_ord = read_data(spark=spark, table_name="bronze_orders")
+
+# Standardize Columns to Snake Case
+bronze_cust = to_snake_case(df=bronze_cust)
+bronze_prod = to_snake_case(df=bronze_prod)
+bronze_ord = to_snake_case(df=bronze_ord)
 
 # COMMAND ----------
 
@@ -52,29 +75,42 @@ bronze_ord = read_data(spark, "delta", f"{Paths.BRONZE_BASE}/orders")
 # COMMAND ----------
 
 # Clean Customers
+# "Customer Name" -> "customer_name"
 silver_cust = clean_dataset(
-    bronze_cust, 
-    clean_text_cols=["Customer Name"], 
-    handle_null_cols=["Country", "City", "State", "Region"],
+    df=bronze_cust, 
+    clean_text_cols=["customer_name"], 
+    handle_null_cols=["country", "city", "state", "region"],
     null_fill_value="N/A"
 )
 
 # Clean Products
+# "Product Name" -> "product_name", "Sub-Category" -> "sub_category"
 silver_prod = clean_dataset(
-    bronze_prod, 
-    clean_text_cols=["Product Name"], 
-    handle_null_cols=["Category", "Sub-Category"],
+    df=bronze_prod, 
+    clean_text_cols=["product_name"], 
+    handle_null_cols=["category", "sub_category"],
     null_fill_value="N/A"
 )
 
 # Clean Orders (Validate IDs)
 silver_ord_cleaned = clean_dataset(
-    bronze_ord,
-    mandatory_cols=["Order ID", "Customer ID", "Product ID"]
+    df=bronze_ord,
+    mandatory_cols=["order_id", "customer_id", "product_id"]
 )
 
-# Parse Dates
-silver_ord_parsed = parse_order_dates(silver_ord_cleaned)
+# Parse Dates (order_date)
+silver_ord_parsed = parse_date_col(
+    df=silver_ord_cleaned, 
+    date_col="order_date", 
+    date_format="d/M/y"
+)
+
+# Add Year
+silver_ord_parsed = add_year_col(
+    df=silver_ord_parsed,
+    date_col="order_date",
+    year_col_name="year"
+)
 
 # COMMAND ----------
 
@@ -83,8 +119,42 @@ silver_ord_parsed = parse_order_dates(silver_ord_cleaned)
 
 # COMMAND ----------
 
-# Join and enrich
-enriched_df = enrich_orders(silver_ord_parsed, silver_cust, silver_prod)
+# Join Orders with Customers
+enriched_df = join_dataframes(
+    left_df=silver_ord_parsed,
+    right_df=silver_cust,
+    join_on="customer_id",
+    join_type="left"
+)
+
+# Join with Products
+enriched_df = join_dataframes(
+    left_df=enriched_df,
+    right_df=silver_prod,
+    join_on="product_id",
+    join_type="left"
+)
+
+# Calculate Metric (Round Profit)
+enriched_df = calculate_metric(
+    df=enriched_df,
+    metric_col="profit",
+    round_places=2
+)
+
+# Select Columns
+# Updated to snake_case
+final_columns = [
+    "order_id", 
+    "order_date", 
+    "profit", 
+    "customer_name", 
+    "country", 
+    "category", 
+    "sub_category",
+    "year"
+]
+enriched_df = enriched_df.select(final_columns)
 
 # COMMAND ----------
 
@@ -94,11 +164,23 @@ enriched_df = enrich_orders(silver_ord_parsed, silver_cust, silver_prod)
 # COMMAND ----------
 
 # Write Cleansed Dimensions to Silver
-write_data(silver_cust, "delta", "overwrite", f"{Paths.SILVER_BASE}/customers")
-write_data(silver_prod, "delta", "overwrite", f"{Paths.SILVER_BASE}/products")
+write_data(
+    df=silver_cust, 
+    mode="overwrite", 
+    table_name="silver_customers"
+)
+write_data(
+    df=silver_prod, 
+    mode="overwrite", 
+    table_name="silver_products"
+)
 
 # Write Enriched Data to Silver
-# Partition by Year for performance
-write_data(enriched_df, "delta", "overwrite", f"{Paths.SILVER_BASE}/enriched_orders", partition_by=["Year"])
+write_data(
+    df=enriched_df, 
+    mode="overwrite", 
+    table_name="silver_enriched_orders", 
+    partition_by=["year"]
+)
 
 print("Enrichment Complete.")

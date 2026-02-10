@@ -1,42 +1,39 @@
 from pyspark.sql import SparkSession, DataFrame
-from sales_ecommerce_analytics_ingestion_utils.config import Paths, Schemas
+from pyspark.sql.types import StructType
 
-def ingest_customers(spark: SparkSession, source_path: str = None) -> DataFrame:
+FORMAT_MAPPINGS = {
+    "excel": "com.crealytics.spark.excel",
+    "csv": "csv",
+    "json": "json",
+    "parquet": "parquet",
+    "delta": "delta",
+    "avro": "avro",
+    "orc": "orc",
+    "text": "text"
+}
+
+def ingest_file(spark: SparkSession, file_format: str, source_path: str, schema: StructType = None, options: dict = None) -> DataFrame:
     """
-    Ingests Customer data from Excel.
-    Note: Spark doesn't support Excel natively without 'com.crealytics.spark.excel'.
-    Assuming this library is available in the Databricks cluster.
+    Generic function to ingest data from a file source.
+    
+    Args:
+        spark: SparkSession instance.
+        file_format: Format alias (e.g., 'excel', 'csv') or full format string.
+        source_path: Path to the source file.
+        schema: Optional StructType schema.
+        options: Optional dictionary of read options.
     """
-    path = source_path or Paths.CUSTOMER_SOURCE
+    actual_format = FORMAT_MAPPINGS.get(file_format.lower(), file_format)
+    reader = spark.read.format(actual_format)
+    
+    if schema:
+        reader = reader.schema(schema)
+    
+    if options:
+        reader = reader.options(**options)
+        
     try:
-        # Using com.crealytics.spark.excel
-        return spark.read.format("com.crealytics.spark.excel") \
-            .option("header", "true") \
-            .option("inferSchema", "true") \
-            .load(path)
+        return reader.load(source_path)
     except Exception as e:
-        print(f"Error reading Excel. If library missing, might need pandas fallback (not implemented here per PySpark requirement). Error: {e}")
+        print(f"Error ingesting {file_format} from {source_path}: {e}")
         raise e
-
-def ingest_products(spark: SparkSession, source_path: str = None) -> DataFrame:
-    """
-    Ingests Products data from CSV.
-    """
-    path = source_path or Paths.PRODUCT_SOURCE
-    # CSV might have custom options like header=True
-    return spark.read.format("csv") \
-        .option("header", "true") \
-        .schema(Schemas.PRODUCT_SCHEMA) \
-        .load(path)
-
-def ingest_orders(spark: SparkSession, source_path: str = None) -> DataFrame:
-    """
-    Ingests Orders data from JSON.
-    """
-    path = source_path or Paths.ORDER_SOURCE
-    # JSON is usually multiline or line-delimited. Inspecting the file (it was a list of dicts), 
-    # so multiLine option might be needed.
-    return spark.read.format("json") \
-        .option("multiLine", "true") \
-        .schema(Schemas.ORDER_SCHEMA) \
-        .load(path)

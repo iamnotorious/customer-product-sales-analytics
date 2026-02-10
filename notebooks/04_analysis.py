@@ -7,62 +7,117 @@
 # COMMAND ----------
 
 # Install local package
-# MAGIC %pip install -e /Workspace/Repos/sales_analytics/customer-product-sales-analytics
+import sys
+import os
 
-# COMMAND ----------
-
-dbutils.library.restartPython()
-
-# COMMAND ----------
+# Add the src directory to path
+sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
 
 from sales_ecommerce_analytics_ingestion_utils.utils import get_spark_session, read_data
-from sales_ecommerce_analytics_ingestion_utils.config import Paths
 
-import sys
-# Fallback if editable install path isn't picked up immediately
-if "/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src" not in sys.path:
-    sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
+class Paths:
+    # Used for installing the package in editable mode via notebooks
+    PROJECT_ROOT = "/Workspace/Repos/sales_analytics/customer-product-sales-analytics"
+    
+    BASE_DATA_DIR = "/FileStore/tables/data" # Assumed Databricks path, adjustable
+    
+    # Source Paths (Local mapping for reference, in DBX these would be mounted)
+    CUSTOMER_SOURCE = "dbfs:/FileStore/tables/data/Customer.xlsx"
+    PRODUCT_SOURCE = "dbfs:/FileStore/tables/data/Products.csv"
+    ORDER_SOURCE = "dbfs:/FileStore/tables/data/Orders.json"
+
+    # Layer Paths
+    BRONZE_BASE = "dbfs:/mnt/delta/bronze"
+    SILVER_BASE = "dbfs:/mnt/delta/silver"
+    GOLD_BASE = "dbfs:/mnt/delta/gold"
 
 spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_ANALYSIS_JOB")
 
+# COMMAND ----------
+
 # Read Silver Enriched Data (Single Source of Truth for ad-hoc analysis)
-enriched_df = read_data(spark, "delta", f"{Paths.SILVER_BASE}/enriched_orders")
+enriched_df = read_data(spark=spark, table_name="silver_enriched_orders")
 
 # Create Temp View for SQL
 enriched_df.createOrReplaceTempView("enriched_orders")
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## Python Analysis (Gold Layer Logic moved here)
+
+# COMMAND ----------
+
+from sales_ecommerce_analytics_ingestion_utils.aggregation import create_aggregates
+
+# 1. Profit by Year
+profit_by_year = create_aggregates(
+    df=enriched_df,
+    group_by_cols=["year"],
+    agg_col="profit",
+    alias_col="total_profit"
+)
+display(profit_by_year)
+
+# 2. Profit by Year + Category
+profit_by_year_category = create_aggregates(
+    df=enriched_df,
+    group_by_cols=["year", "category"],
+    agg_col="profit",
+    alias_col="total_profit"
+)
+display(profit_by_year_category)
+
+# 3. Profit by Customer
+profit_by_customer = create_aggregates(
+    df=enriched_df,
+    group_by_cols=["customer_name"],
+    agg_col="profit",
+    alias_col="total_profit"
+)
+display(profit_by_customer)
+
+# 4. Profit by Customer + Year
+profit_by_customer_year = create_aggregates(
+    df=enriched_df,
+    group_by_cols=["customer_name", "year"],
+    agg_col="profit",
+    alias_col="total_profit"
+)
+display(profit_by_customer_year)
+
+# COMMAND ----------
+
 # MAGIC %sql
 # MAGIC -- 1. Profit by Year
-# MAGIC SELECT Year, ROUND(SUM(Profit), 2) as Total_Profit
+# MAGIC SELECT year, ROUND(SUM(profit), 2) as total_profit
 # MAGIC FROM enriched_orders
-# MAGIC GROUP BY Year
-# MAGIC ORDER BY Year
+# MAGIC GROUP BY year
+# MAGIC ORDER BY year
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC -- 2. Profit by Year + Product Category
-# MAGIC SELECT Year, Category, ROUND(SUM(Profit), 2) as Total_Profit
+# MAGIC SELECT year, category, ROUND(SUM(profit), 2) as total_profit
 # MAGIC FROM enriched_orders
-# MAGIC GROUP BY Year, Category
-# MAGIC ORDER BY Year, Category
+# MAGIC GROUP BY year, category
+# MAGIC ORDER BY year, category
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC -- 3. Profit by Customer
-# MAGIC SELECT `Customer Name`, ROUND(SUM(Profit), 2) as Total_Profit
+# MAGIC SELECT customer_name, ROUND(SUM(profit), 2) as total_profit
 # MAGIC FROM enriched_orders
-# MAGIC GROUP BY `Customer Name`
-# MAGIC ORDER BY Total_Profit DESC
+# MAGIC GROUP BY customer_name
+# MAGIC ORDER BY total_profit DESC
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC -- 4. Profit by Customer + Year
-# MAGIC SELECT `Customer Name`, Year, ROUND(SUM(Profit), 2) as Total_Profit
+# MAGIC SELECT customer_name, year, ROUND(SUM(profit), 2) as total_profit
 # MAGIC FROM enriched_orders
-# MAGIC GROUP BY `Customer Name`, Year
-# MAGIC ORDER BY `Customer Name`, Year
+# MAGIC GROUP BY customer_name, year
+# MAGIC ORDER BY customer_name, year

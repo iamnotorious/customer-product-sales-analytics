@@ -9,10 +9,13 @@ def get_spark_session(app_name: str = "DatabricksApp") -> SparkSession:
         .appName(app_name) \
         .getOrCreate()
 
-def read_data(spark: SparkSession, file_format: str, path: str, schema=None, options: dict = None) -> DataFrame:
+def read_data(spark: SparkSession, file_format: str = "delta", path: str = None, table_name: str = None, schema=None, options: dict = None) -> DataFrame:
     """
-    Generic function to read data.
+    Generic function to read data from file path or managed table.
     """
+    if table_name:
+        return spark.read.table(table_name)
+
     reader = spark.read.format(file_format)
     
     if schema:
@@ -27,9 +30,9 @@ def read_data(spark: SparkSession, file_format: str, path: str, schema=None, opt
         print(f"Error reading data from {path}: {e}")
         raise e
 
-def write_data(df: DataFrame, file_format: str, mode: str, path: str, partition_by: list = None):
+def write_data(df: DataFrame, file_format: str = "delta", mode: str = "append", path: str = None, table_name: str = None, partition_by: list = None):
     """
-    Generic function to write data.
+    Generic function to write data to file path or managed table.
     """
     writer = df.write.format(file_format).mode(mode)
     
@@ -37,8 +40,15 @@ def write_data(df: DataFrame, file_format: str, mode: str, path: str, partition_
         writer = writer.partitionBy(*partition_by)
         
     try:
-        writer.save(path)
-        print(f"Data written successfully to {path}")
+        if table_name:
+            writer.saveAsTable(table_name)
+            print(f"Data written successfully to managed table {table_name}")
+        elif path:
+            writer.save(path)
+            print(f"Data written successfully to {path}")
+        else:
+            raise ValueError("Either path or table_name must be provided")
+            
     except Exception as e:
-        print(f"Error writing data to {path}: {e}")
+        print(f"Error writing data: {e}")
         raise e

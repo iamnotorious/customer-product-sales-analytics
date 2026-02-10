@@ -16,6 +16,15 @@ def handle_nulls(df: DataFrame, columns: list, default_value: str = "N/A") -> Da
     fill_dict = {c: default_value for c in columns}
     return df.fillna(fill_dict)
 
+def to_snake_case(df: DataFrame) -> DataFrame:
+    """
+    Converts all column names in the DataFrame to snake_case.
+    """
+    for col_name in df.columns:
+        new_name = col_name.strip().lower().replace(' ', '_').replace('-', '_').replace('/', '_')
+        df = df.withColumnRenamed(col_name, new_name)
+    return df
+
 def clean_dataset(
     df: DataFrame, 
     clean_text_cols: list = None, 
@@ -25,13 +34,6 @@ def clean_dataset(
 ) -> DataFrame:
     """
     Generic function to clean a dataset based on provided rules.
-    
-    Args:
-        df: Input DataFrame.
-        clean_text_cols: List of column names to remove special characters from.
-        handle_null_cols: List of column names to fill nulls in.
-        null_fill_value: Value to replace nulls with (default "N/A").
-        mandatory_cols: List of columns that must not be null (rows with nulls here will be dropped).
     """
     cleaned_df = df
     
@@ -50,47 +52,36 @@ def clean_dataset(
         
     return cleaned_df
 
-def enrich_orders(orders_df: DataFrame, customers_df: DataFrame, products_df: DataFrame) -> DataFrame:
+def join_dataframes(
+    left_df: DataFrame, 
+    right_df: DataFrame, 
+    join_on: str, 
+    join_type: str = "left"
+) -> DataFrame:
     """
-    Enriches orders with customer and product information.
-    Calculates Profit (rounded).
+    Generic function to join two dataframes.
     """
-    # Perform Joins
-    # Left join to keep all orders even if customer/product is missing (though in clean data they shouldn't be)
-    enriched = orders_df.join(customers_df, "Customer ID", "left") \
-                        .join(products_df, "Product ID", "left")
-    
-    # Select and Rename columns as needed
-    # Ensure Profit is rounded to 2 decimal places
-    enriched = enriched.withColumn("Profit", round(col("Profit"), 2))
-    
-    # Select specific columns for the final enriched table
-    final_cols = [
-        "Order ID", 
-        "Order Date", 
-        "Profit", 
-        "Customer Name", 
-        "Country", 
-        "Category", 
-        "Sub-Category",
-        "Year" # Will need to extract Year from Order Date
-    ]
-    
-    # Add Year column
-    # Assuming Order Date is in format 'dd/MM/yyyy' or similar based on raw inspection
-    # pyspark.sql.functions.to_date needs format
-    # Let's handle date parsing in a separate step or here
-    
-    return enriched
+    return left_df.join(right_df, join_on, join_type)
+
+def calculate_metric(df: DataFrame, metric_col: str, round_places: int = 2) -> DataFrame:
+    """
+    Rounds a specific metric column.
+    """
+    return df.withColumn(metric_col, round(col(metric_col), round_places))
 
 # Helper for date parsing since raw data has '21/8/2016' format
 from pyspark.sql.functions import to_date, year, format_number
 
-def parse_order_dates(df: DataFrame) -> DataFrame:
+def parse_date_col(df: DataFrame, date_col: str, date_format: str, output_col: str = None) -> DataFrame:
     """
-    Parses 'Order Date' from string (dd/MM/yyyy) to DateType and adds 'Year'.
+    Parses a string date column to a proper DateType.
+    Optionally adds a Year column if requested (logic moved out or kept separate).
     """
-    # Spark 3.0+ pattern for dd/MM/yyyy
-    df = df.withColumn("ParsedOrderDate", to_date(col("Order Date"), "d/M/y"))
-    df = df.withColumn("Year", year(col("ParsedOrderDate")))
-    return df
+    target_col = output_col if output_col else date_col
+    return df.withColumn(target_col, to_date(col(date_col), date_format))
+
+def add_year_col(df: DataFrame, date_col: str, year_col_name: str = "year") -> DataFrame:
+    """
+    Adds a year column extracted from a date column.
+    """
+    return df.withColumn(year_col_name, year(col(date_col)))
