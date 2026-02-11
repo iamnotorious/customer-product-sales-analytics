@@ -50,6 +50,10 @@ def ingest_file(spark: SparkSession, file_format: str, source_path: str, schema:
         schema: Optional StructType schema.
         options: Optional dictionary of read options.
     """
+    # Use pandas for Excel files (spark-excel JAR not available on serverless compute)
+    if file_format.lower() == "excel":
+        return _ingest_excel_pandas(spark=spark, source_path=source_path, schema=schema, options=options)
+
     actual_format = FORMAT_MAPPINGS.get(file_format.lower(), file_format)
     reader = spark.read.format(actual_format)
     
@@ -62,9 +66,6 @@ def ingest_file(spark: SparkSession, file_format: str, source_path: str, schema:
     try:
         return reader.load(source_path)
     except Exception as e:
-        # Fallback to pandas for Excel files if spark-excel JAR is unavailable
-        if file_format.lower() == "excel":
-            logger.warning(f"spark-excel failed, falling back to pandas: {e}")
-            return _ingest_excel_pandas(spark=spark, source_path=source_path, schema=schema, options=options)
         logger.error(f"Error ingesting {file_format} from {source_path}: {e}")
         raise e
+
