@@ -94,7 +94,7 @@ def write_data(df: DataFrame, file_format: str = "delta", mode: str = "append", 
             raise ValueError("Either path or table_name must be provided")
             
     except Exception as e:
-        print(f"Error writing data: {e}")
+        logger.error(f"Error writing data: {e}")
         raise e
 
 def merge_data(df: DataFrame, table_name: str, merge_keys: list, update_columns: list = None):
