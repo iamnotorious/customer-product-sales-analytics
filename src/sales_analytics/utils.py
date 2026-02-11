@@ -21,7 +21,7 @@ def get_spark_session(app_name: str = "DatabricksApp") -> SparkSession:
     logger.info(f"Creating Spark session: {app_name}")
     return SparkSession.builder \
         .appName(app_name) \
-        .config("spark.jars.packages", "com.crealytics:spark-excel_2.12:3.3.1_0.18.7") \
+        .config("spark.jars.packages", "com.crealytics:spark-excel_2.13:3.5.1_0.20.4") \
         .config("spark.sql.adaptive.enabled", "true") \
         .config("spark.sql.adaptive.skewJoin.enabled", "true") \
         .getOrCreate()

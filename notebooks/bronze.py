@@ -12,9 +12,6 @@ import os
 # Add the src directory to path
 sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
 
-# Add the spark-excel JAR for Excel file support
-spark.conf.set("spark.jars", "/Workspace/Repos/sales_analytics/customer-product-sales-analytics/jars/spark-excel_2.12-3.5.1_0.20.4.jar")
-
 # COMMAND ----------
 
 # Import libraries
