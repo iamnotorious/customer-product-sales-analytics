@@ -17,12 +17,13 @@ FORMAT_MAPPINGS = {
 
 def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructType = None, options: dict = None) -> DataFrame:
     """
-    Fallback: Ingest Excel files using pandas + openpyxl.
-    Used when com.crealytics.spark.excel is not available (e.g., serverless compute).
+    Ingest Excel files using pandas + openpyxl.
+    Reads all columns as strings to avoid mixed-type Arrow conversion errors.
+    Spark schema handles type casting if provided.
     """
     import pandas as pd
 
-    read_options = {}
+    read_options = {"dtype": str}
     if options:
         if options.get("header", "true").lower() == "true":
             read_options["header"] = 0
@@ -31,13 +32,9 @@ def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructTy
         if "sheet" in options:
             read_options["sheet_name"] = options["sheet"]
 
-    logger.info(f"Falling back to pandas for Excel ingestion: {source_path}")
+    logger.info(f"Reading Excel via pandas: {source_path}")
     pandas_df = pd.read_excel(source_path, **read_options)
-
-    # Sanitize mixed-type columns to avoid Arrow conversion errors
-    for col in pandas_df.columns:
-        if pandas_df[col].dtype == "object":
-            pandas_df[col] = pandas_df[col].astype(str).replace("nan", None)
+    logger.info(f"Read {len(pandas_df)} rows from Excel via pandas")
 
     if schema:
         return spark.createDataFrame(data=pandas_df, schema=schema)
