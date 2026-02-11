@@ -12,8 +12,10 @@ import os
 
 # Import libraries
 from pyspark.sql import SparkSession, DataFrame
-from sales_analytics.utils import get_spark_session, read_data, write_data
+from sales_analytics.utils import get_spark_session, read_data, write_data, merge_data
 from sales_analytics.aggregation import create_aggregates
+from sales_analytics.exceptions import DataWriteError
+from sales_analytics.validation import validate_data_range
 
 # Configuration
 silver_enriched_orders_table = "sales.silver.sales_ecommerce_enriched_orders"
@@ -36,9 +38,6 @@ def merge_to_gold(*, df: DataFrame):
     Incrementally merge aggregates to Gold layer.
     For aggregate tables, we use merge to update existing aggregates and add new ones.
     """
-    from pyspark.sql import SparkSession
-    from sales_analytics.utils import merge_data
-    
     spark = SparkSession.getActiveSession()
     
     if spark.catalog.tableExists(gold_profit_aggregates_table):
@@ -102,9 +101,10 @@ def perform_analysis_output(*, spark_session: SparkSession):
     """).show()
 
 # Execution
+
+# COMMAND ----------
+
 if __name__ == "__main__":
-    from sales_analytics.exceptions import DataWriteError
-    from sales_analytics.validation import validate_data_range
     
     spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_AGGREGATION_JOB")
     

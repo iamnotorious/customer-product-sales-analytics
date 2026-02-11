@@ -15,10 +15,12 @@ sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analyti
 # COMMAND ----------
 
 # Import libraries
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, DateType
-from sales_analytics.utils import get_spark_session, write_data
+from sales_analytics.utils import get_spark_session, write_data, merge_data
 from sales_analytics.ingestion import ingest_file
+from sales_analytics.exceptions import DataIngestionError, DataWriteError
+from sales_analytics.validation import generate_data_quality_report, check_duplicates
 
 # Configuration Variables
 # Source Paths
@@ -124,7 +126,6 @@ def merge_to_bronze(*, df: DataFrame, table_name: str, merge_keys: list):
     Creates table on first run, merges on subsequent runs.
     """
     try:
-        from pyspark.sql import SparkSession
         spark = SparkSession.getActiveSession()
         
         # Check if table exists
@@ -136,7 +137,6 @@ def merge_to_bronze(*, df: DataFrame, table_name: str, merge_keys: list):
             print(f"Initial load complete for {table_name}")
         else:
             print(f"Table {table_name} exists. Performing incremental merge...")
-            from sales_analytics.utils import merge_data
             merge_data(df=df, table_name=table_name, merge_keys=merge_keys)
             print(f"Incremental merge complete for {table_name}")
             
@@ -145,11 +145,10 @@ def merge_to_bronze(*, df: DataFrame, table_name: str, merge_keys: list):
         raise DataWriteError(f"Failed to merge to {table_name}") from e
 
 # Execution
+
+# COMMAND ----------
+
 if __name__ == "__main__":
-    # Import exceptions
-    from sales_analytics.exceptions import DataIngestionError, DataWriteError
-    from sales_analytics.validation import generate_data_quality_report, check_duplicates
-    
     # Get Spark Session
     spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
 

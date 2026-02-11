@@ -16,7 +16,10 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import DataFrame
 
-from sales_analytics.utils import get_spark_session, read_data, write_data
+from pyspark.sql.functions import lit, current_timestamp, to_date
+from sales_analytics.utils import get_spark_session, read_data, write_data, merge_data, merge_scd_type2
+from sales_analytics.exceptions import DataTransformationError, DataWriteError
+from sales_analytics.validation import validate_schema, check_null_percentage
 from sales_analytics.transformation import (
     to_snake_case, 
     clean_dataset, 
@@ -110,9 +113,6 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: Data
     - Customers & Products: SCD Type 2 (historical tracking)
     - Orders: Upsert on order_id, partitioned by order_date
     """
-    from pyspark.sql import SparkSession
-    from sales_analytics.utils import merge_data, merge_scd_type2
-    
     spark = SparkSession.getActiveSession()
     
     # SCD Type 2: Customers (track historical changes in customer attributes)
@@ -126,7 +126,6 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: Data
         )
     else:
         print("Creating customers silver table with SCD Type 2 structure...")
-        from pyspark.sql.functions import lit, current_timestamp, to_date
         cust_df_scd = cust_df \
             .withColumn("effective_date", to_date(current_timestamp())) \
             .withColumn("end_date", lit(None).cast("date")) \
@@ -144,7 +143,6 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: Data
         )
     else:
         print("Creating products silver table with SCD Type 2 structure...")
-        from pyspark.sql.functions import lit, current_timestamp, to_date
         prod_df_scd = prod_df \
             .withColumn("effective_date", to_date(current_timestamp())) \
             .withColumn("end_date", lit(None).cast("date")) \
@@ -165,9 +163,10 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: Data
         )
 
 # Execution
+
+# COMMAND ----------
+
 if __name__ == "__main__":
-    from sales_analytics.exceptions import DataTransformationError, DataWriteError
-    from sales_analytics.validation import validate_schema, check_null_percentage
     
     spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_ENRICHMENT_JOB")
     
