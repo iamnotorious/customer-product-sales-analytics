@@ -34,6 +34,11 @@ def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructTy
     logger.info(f"Falling back to pandas for Excel ingestion: {source_path}")
     pandas_df = pd.read_excel(source_path, **read_options)
 
+    # Sanitize mixed-type columns to avoid Arrow conversion errors
+    for col in pandas_df.columns:
+        if pandas_df[col].dtype == "object":
+            pandas_df[col] = pandas_df[col].astype(str).replace("nan", None)
+
     if schema:
         return spark.createDataFrame(data=pandas_df, schema=schema)
     else:
