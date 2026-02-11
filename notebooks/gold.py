@@ -11,7 +11,10 @@ import sys
 import os
 
 # Import libraries
+import logging
 from pyspark.sql import SparkSession, DataFrame
+
+logger = logging.getLogger(__name__)
 from sales_analytics.utils import get_spark_session, read_data, write_data, merge_data
 from sales_analytics.aggregation import create_aggregates
 from sales_analytics.exceptions import DataWriteError
@@ -41,7 +44,7 @@ def merge_to_gold(*, df: DataFrame):
     spark = SparkSession.getActiveSession()
     
     if spark.catalog.tableExists(gold_profit_aggregates_table):
-        print("Merging profit aggregates to gold layer...")
+        logger.info("Merging profit aggregates to gold layer...")
         # Merge on dimensional keys (year, category, sub_category, customer_name)
         merge_data(
             df=df, 
@@ -50,7 +53,7 @@ def merge_to_gold(*, df: DataFrame):
             update_columns=["total_profit"]  # Update only the metric
         )
     else:
-        print("Creating profit aggregates gold table...")
+        logger.info("Creating profit aggregates gold table...")
         write_data(
             df=df, 
             mode="overwrite", 
@@ -62,10 +65,10 @@ def perform_analysis_output(*, spark_session: SparkSession):
     """
     Outputs the requested aggregates using SQL on the created gold table.
     """
-    print("Generating Analysis Outputs...")
+    logger.info("Generating Analysis Outputs...")
     
     # 1. Profit by Year
-    print("--- Profit by Year ---")
+    logger.info("--- Profit by Year ---")
     spark_session.sql(f"""
         SELECT year, round(sum(total_profit), 2) as annual_profit 
         FROM {gold_profit_aggregates_table} 
@@ -74,7 +77,7 @@ def perform_analysis_output(*, spark_session: SparkSession):
     """).show()
     
     # 2. Profit by Year + Product Category
-    print("--- Profit by Year + Product Category ---")
+    logger.info("--- Profit by Year + Product Category ---")
     spark_session.sql(f"""
         SELECT year, category, round(sum(total_profit), 2) as category_profit 
         FROM {gold_profit_aggregates_table} 
@@ -83,7 +86,7 @@ def perform_analysis_output(*, spark_session: SparkSession):
     """).show()
     
     # 3. Profit by Customer
-    print("--- Profit by Customer ---")
+    logger.info("--- Profit by Customer ---")
     spark_session.sql(f"""
         SELECT customer_name, round(sum(total_profit), 2) as customer_profit 
         FROM {gold_profit_aggregates_table} 
@@ -92,7 +95,7 @@ def perform_analysis_output(*, spark_session: SparkSession):
     """).show()
     
     # 4. Profit by Customer + Year
-    print("--- Profit by Customer + Year ---")
+    logger.info("--- Profit by Customer + Year ---")
     spark_session.sql(f"""
         SELECT customer_name, year, round(sum(total_profit), 2) as customer_annual_profit 
         FROM {gold_profit_aggregates_table} 
@@ -110,31 +113,31 @@ if __name__ == "__main__":
     
     try:
         # Read
-        print("Reading Silver enriched data...")
+        logger.info("Reading Silver enriched data...")
         enriched_df = read_silver_data(spark_session=spark)
-        print(f"Loaded {enriched_df.count()} enriched order records")
+        logger.info(f"Loaded {enriched_df.count()} enriched order records")
         
         # Calculate aggregates
-        print("Calculating profit aggregates...")
+        logger.info("Calculating profit aggregates...")
         gold_aggregates = calculate_profit_aggregates(df=enriched_df)
         
         # Validate aggregates
-        print("Validating aggregate data...")
+        logger.info("Validating aggregate data...")
         agg_count = gold_aggregates.count()
-        print(f"Generated {agg_count} aggregate records")
+        logger.info(f"Generated {agg_count} aggregate records")
         
         # Write with incremental merge
         merge_to_gold(df=gold_aggregates)
         
         # Perform Analysis
-        print("\n" + "="*60)
-        print("ANALYSIS OUTPUTS")
-        print("="*60 + "\n")
+        logger.info("=" * 60)
+        logger.info("ANALYSIS OUTPUTS")
+        logger.info("=" * 60)
         perform_analysis_output(spark_session=spark)
 
-        print("\nGold layer aggregation and analysis completed successfully.")
-        print("Incremental merge strategy applied to gold aggregates table.")
+        logger.info("Gold layer aggregation and analysis completed successfully.")
+        logger.info("Incremental merge strategy applied to gold aggregates table.")
         
     except Exception as e:
-        print(f"ERROR in Gold layer processing: {e}")
+        logger.error(f"Error in Gold layer processing: {e}")
         raise

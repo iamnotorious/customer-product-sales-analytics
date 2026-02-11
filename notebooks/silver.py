@@ -13,8 +13,11 @@
 # COMMAND ----------
 
 # Import libraries
+import logging
 from pyspark.sql import SparkSession
 from pyspark.sql import DataFrame
+
+logger = logging.getLogger(__name__)
 
 from pyspark.sql.functions import lit, current_timestamp, to_date
 from sales_analytics.utils import get_spark_session, read_data, write_data, merge_data, merge_scd_type2
@@ -117,7 +120,7 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: Data
     
     # SCD Type 2: Customers (track historical changes in customer attributes)
     if spark.catalog.tableExists(silver_customers_table):
-        print("Applying SCD Type 2 merge for customers (historical tracking)...")
+        logger.info("Applying SCD Type 2 merge for customers (historical tracking)...")
         merge_scd_type2(
             df=cust_df, 
             table_name=silver_customers_table, 
@@ -125,7 +128,7 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: Data
             compare_columns=["customer_name", "country", "city", "state", "region"]
         )
     else:
-        print("Creating customers silver table with SCD Type 2 structure...")
+        logger.info("Creating customers silver table with SCD Type 2 structure...")
         cust_df_scd = cust_df \
             .withColumn("effective_date", to_date(current_timestamp())) \
             .withColumn("end_date", lit(None).cast("date")) \
@@ -134,7 +137,7 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: Data
     
     # SCD Type 2: Products (track historical changes in product attributes, especially price)
     if spark.catalog.tableExists(silver_products_table):
-        print("Applying SCD Type 2 merge for products (historical tracking)...")
+        logger.info("Applying SCD Type 2 merge for products (historical tracking)...")
         merge_scd_type2(
             df=prod_df, 
             table_name=silver_products_table, 
@@ -142,7 +145,7 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: Data
             compare_columns=["category", "sub_category", "product_name", "price_per_product"]
         )
     else:
-        print("Creating products silver table with SCD Type 2 structure...")
+        logger.info("Creating products silver table with SCD Type 2 structure...")
         prod_df_scd = prod_df \
             .withColumn("effective_date", to_date(current_timestamp())) \
             .withColumn("end_date", lit(None).cast("date")) \
@@ -151,10 +154,10 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: Data
     
     # Fact Table: Enriched Orders (upsert, partitioned by order_date for query performance)
     if spark.catalog.tableExists(silver_enriched_orders_table):
-        print("Merging enriched orders (fact table, partitioned by order_date)...")
+        logger.info("Merging enriched orders (fact table, partitioned by order_date)...")
         merge_data(df=enriched_df, table_name=silver_enriched_orders_table, merge_keys=["order_id"])
     else:
-        print("Creating enriched orders silver table (partitioned by order_date)...")
+        logger.info("Creating enriched orders silver table (partitioned by order_date)...")
         write_data(
             df=enriched_df, 
             mode="overwrite", 
@@ -172,11 +175,11 @@ if __name__ == "__main__":
     
     try:
         # Read
-        print("Reading Bronze layer data...")
+        logger.info("Reading Bronze layer data...")
         bronze_cust_raw, bronze_prod_raw, bronze_ord_raw = read_bronze_data(spark_session=spark)
         
         # Standardize
-        print("Standardizing schemas to snake_case...")
+        logger.info("Standardizing schemas to snake_case...")
         bronze_cust = standardize_schema(df=bronze_cust_raw)
         bronze_prod = standardize_schema(df=bronze_prod_raw)
         bronze_ord = standardize_schema(df=bronze_ord_raw)
@@ -187,30 +190,30 @@ if __name__ == "__main__":
             raise DataTransformationError("Order data missing required columns")
         
         # Transform
-        print("Transforming data...")
+        logger.info("Transforming data...")
         silver_cust = transform_customers(df=bronze_cust)
         silver_prod = transform_products(df=bronze_prod)
         silver_ord_parsed = transform_orders(df=bronze_ord)
         
         # Validate transformed data
-        print("Validating transformed data quality...")
+        logger.info("Validating transformed data quality...")
         check_null_percentage(df=silver_ord_parsed, column="order_date", threshold=0.1)
         check_null_percentage(df=silver_ord_parsed, column="profit", threshold=0.1)
         
         # Enrich
-        print("Enriching order data with customer and product information...")
+        logger.info("Enriching order data with customer and product information...")
         enriched_df = enrich_order_data(orders=silver_ord_parsed, customers=silver_cust, products=silver_prod)
         
         # Final validation
-        print(f"Enriched dataset created with {enriched_df.count()} records")
+        logger.info(f"Enriched dataset created with {enriched_df.count()} records")
         
         # Write with SCD Type 2 for dimensions and partitioned orders
         merge_to_silver(cust_df=silver_cust, prod_df=silver_prod, enriched_df=enriched_df)
         
-        print("Silver layer transformation completed successfully. All data quality checks passed.")
-        print("SCD Type 2 applied to Customers and Products for historical tracking.")
-        print("Orders partitioned by order_date for optimal query performance.")
+        logger.info("Silver layer transformation completed successfully. All data quality checks passed.")
+        logger.info("SCD Type 2 applied to Customers and Products for historical tracking.")
+        logger.info("Orders partitioned by order_date for optimal query performance.")
         
     except Exception as e:
-        print(f"ERROR in Silver layer processing: {e}")
+        logger.error(f"Error in Silver layer processing: {e}")
         raise
