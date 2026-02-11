@@ -35,16 +35,16 @@ silver_customers_table = "sales.silver.sales_ecommerce_customers"
 silver_products_table = "sales.silver.sales_ecommerce_products"
 silver_enriched_orders_table = "sales.silver.sales_ecommerce_enriched_orders"
 
-def read_bronze_data(spark_session: SparkSession):
+def read_bronze_data(*, spark_session: SparkSession):
     cust = read_data(spark=spark_session, table_name=bronze_customers_table)
     prod = read_data(spark=spark_session, table_name=bronze_products_table)
     ord_ = read_data(spark=spark_session, table_name=bronze_orders_table)
     return cust, prod, ord_
 
-def standardize_schema(df: DataFrame) -> DataFrame:
+def standardize_schema(*, df: DataFrame) -> DataFrame:
     return to_snake_case(df=df)
 
-def transform_customers(df: DataFrame) -> DataFrame:
+def transform_customers(*, df: DataFrame) -> DataFrame:
     return clean_dataset(
         df=df, 
         clean_text_cols=["customer_name"], 
@@ -52,7 +52,7 @@ def transform_customers(df: DataFrame) -> DataFrame:
         null_fill_value="N/A"
     )
 
-def transform_products(df: DataFrame) -> DataFrame:
+def transform_products(*, df: DataFrame) -> DataFrame:
     return clean_dataset(
         df=df, 
         clean_text_cols=["product_name"], 
@@ -60,7 +60,7 @@ def transform_products(df: DataFrame) -> DataFrame:
         null_fill_value="N/A"
     )
 
-def transform_orders(df: DataFrame) -> DataFrame:
+def transform_orders(*, df: DataFrame) -> DataFrame:
     cleaned = clean_dataset(
         df=df,
         mandatory_cols=["order_id", "customer_id", "product_id"]
@@ -76,7 +76,7 @@ def transform_orders(df: DataFrame) -> DataFrame:
         year_col_name="year"
     )
 
-def enrich_order_data(orders: DataFrame, customers: DataFrame, products: DataFrame) -> DataFrame:
+def enrich_order_data(*, orders: DataFrame, customers: DataFrame, products: DataFrame) -> DataFrame:
     # Join Orders with Customers
     enriched = join_dataframes(
         left_df=orders,
@@ -104,7 +104,7 @@ def enrich_order_data(orders: DataFrame, customers: DataFrame, products: DataFra
     ]
     return enriched.select(final_columns)
 
-def merge_to_silver(cust_df: DataFrame, prod_df: DataFrame, enriched_df: DataFrame):
+def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, enriched_df: DataFrame):
     """
     Incrementally merge data to Silver layer.
     - Customers & Products: SCD Type 2 (historical tracking)
@@ -174,39 +174,39 @@ if __name__ == "__main__":
     try:
         # Read
         print("Reading Bronze layer data...")
-        bronze_cust_raw, bronze_prod_raw, bronze_ord_raw = read_bronze_data(spark)
+        bronze_cust_raw, bronze_prod_raw, bronze_ord_raw = read_bronze_data(spark_session=spark)
         
         # Standardize
         print("Standardizing schemas to snake_case...")
-        bronze_cust = standardize_schema(bronze_cust_raw)
-        bronze_prod = standardize_schema(bronze_prod_raw)
-        bronze_ord = standardize_schema(bronze_ord_raw)
+        bronze_cust = standardize_schema(df=bronze_cust_raw)
+        bronze_prod = standardize_schema(df=bronze_prod_raw)
+        bronze_ord = standardize_schema(df=bronze_ord_raw)
         
         # Validate schemas
         required_order_cols = ["order_id", "customer_id", "product_id", "order_date", "profit"]
-        if not validate_schema(bronze_ord, required_order_cols):
+        if not validate_schema(df=bronze_ord, required_columns=required_order_cols):
             raise DataTransformationError("Order data missing required columns")
         
         # Transform
         print("Transforming data...")
-        silver_cust = transform_customers(bronze_cust)
-        silver_prod = transform_products(bronze_prod)
-        silver_ord_parsed = transform_orders(bronze_ord)
+        silver_cust = transform_customers(df=bronze_cust)
+        silver_prod = transform_products(df=bronze_prod)
+        silver_ord_parsed = transform_orders(df=bronze_ord)
         
         # Validate transformed data
         print("Validating transformed data quality...")
-        check_null_percentage(silver_ord_parsed, "order_date", threshold=0.1)
-        check_null_percentage(silver_ord_parsed, "profit", threshold=0.1)
+        check_null_percentage(df=silver_ord_parsed, column="order_date", threshold=0.1)
+        check_null_percentage(df=silver_ord_parsed, column="profit", threshold=0.1)
         
         # Enrich
         print("Enriching order data with customer and product information...")
-        enriched_df = enrich_order_data(silver_ord_parsed, silver_cust, silver_prod)
+        enriched_df = enrich_order_data(orders=silver_ord_parsed, customers=silver_cust, products=silver_prod)
         
         # Final validation
         print(f"Enriched dataset created with {enriched_df.count()} records")
         
         # Write with SCD Type 2 for dimensions and partitioned orders
-        merge_to_silver(silver_cust, silver_prod, enriched_df)
+        merge_to_silver(cust_df=silver_cust, prod_df=silver_prod, enriched_df=enriched_df)
         
         print("Silver layer transformation completed successfully. All data quality checks passed.")
         print("SCD Type 2 applied to Customers and Products for historical tracking.")

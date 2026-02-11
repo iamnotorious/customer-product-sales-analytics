@@ -12,6 +12,8 @@ import os
 # Add the src directory to path
 sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
 
+# COMMAND ----------
+
 # Import libraries
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, DateType
@@ -53,13 +55,13 @@ order_schema = StructType([
     StructField("Profit", DoubleType(), True)
 ])
 
-def ingest_customers_data(spark_session: SparkSession, source_path: str) -> DataFrame:
+def ingest_customers_data(*, spark_session: SparkSession, source_path: str) -> DataFrame:
     """Ingest customer data from Excel source."""
-    print("Ingesting Customers...")
     try:
         df = ingest_file(
             spark=spark_session, 
             file_format="excel", 
+
             source_path=source_path,
             options={"header": "true", "inferSchema": "true"}
         )
@@ -69,7 +71,7 @@ def ingest_customers_data(spark_session: SparkSession, source_path: str) -> Data
         print(f"Error ingesting customers: {e}")
         raise DataIngestionError(f"Failed to ingest customers from {source_path}") from e
 
-def ingest_products_data(spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
+def ingest_products_data(*, spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
     """Ingest product data from CSV source."""
     print("Ingesting Products...")
     try:
@@ -86,7 +88,7 @@ def ingest_products_data(spark_session: SparkSession, source_path: str, schema: 
         print(f"Error ingesting products: {e}")
         raise DataIngestionError(f"Failed to ingest products from {source_path}") from e
 
-def ingest_orders_data(spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
+def ingest_orders_data(*, spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
     """Ingest order data from JSON source."""
     print("Ingesting Orders...")
     try:
@@ -103,20 +105,20 @@ def ingest_orders_data(spark_session: SparkSession, source_path: str, schema: St
         print(f"Error ingesting orders: {e}")
         raise DataIngestionError(f"Failed to ingest orders from {source_path}") from e
 
-def validate_bronze_data(df: DataFrame, name: str, key_columns: list):
+def validate_bronze_data(*, df: DataFrame, name: str, key_columns: list):
     """Validate bronze layer data quality."""
     print(f"Validating {name}...")
     
     # Generate quality report
-    report = generate_data_quality_report(df, name)
+    report = generate_data_quality_report(df=df, name=name)
     print(f"Quality Report - {name}: {report['row_count']} rows")
     
     # Check for duplicates
-    dup_report = check_duplicates(df, key_columns)
+    dup_report = check_duplicates(df=df, key_columns=key_columns)
     if dup_report['duplicate_count'] > 0:
         print(f"WARNING: {dup_report['duplicate_count']} duplicates found in {name}")
 
-def merge_to_bronze(df: DataFrame, table_name: str, merge_keys: list):
+def merge_to_bronze(*, df: DataFrame, table_name: str, merge_keys: list):
     """
     Incrementally merge DataFrame to Bronze layer using upsert logic.
     Creates table on first run, merges on subsequent runs.
@@ -149,22 +151,22 @@ if __name__ == "__main__":
     from sales_analytics.validation import generate_data_quality_report, check_duplicates
     
     # Get Spark Session
-    spark = get_spark_session("SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
+    spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
 
     # 1. Customers
-    customers_df = ingest_customers_data(spark, customer_source_path)
-    validate_bronze_data(customers_df, "Customers", ["Customer ID"])
-    merge_to_bronze(customers_df, bronze_customers_table, merge_keys=["Customer ID"])
+    customers_df = ingest_customers_data(spark_session=spark, source_path=customer_source_path)
+    validate_bronze_data(df=customers_df, name="Customers", key_columns=["Customer ID"])
+    merge_to_bronze(df=customers_df, table_name=bronze_customers_table, merge_keys=["Customer ID"])
 
     # 2. Products
-    products_df = ingest_products_data(spark, product_source_path, product_schema)
-    validate_bronze_data(products_df, "Products", ["Product ID"])
-    merge_to_bronze(products_df, bronze_products_table, merge_keys=["Product ID"])
+    products_df = ingest_products_data(spark_session=spark, source_path=product_source_path, schema=product_schema)
+    validate_bronze_data(df=products_df, name="Products", key_columns=["Product ID"])
+    merge_to_bronze(df=products_df, table_name=bronze_products_table, merge_keys=["Product ID"])
 
     # 3. Orders
-    orders_df = ingest_orders_data(spark, order_source_path, order_schema)
-    validate_bronze_data(orders_df, "Orders", ["Order ID", "Row ID"])
-    merge_to_bronze(orders_df, bronze_orders_table, merge_keys=["Order ID", "Row ID"])
+    orders_df = ingest_orders_data(spark_session=spark, source_path=order_source_path, schema=order_schema)
+    validate_bronze_data(df=orders_df, name="Orders", key_columns=["Order ID", "Row ID"])
+    merge_to_bronze(df=orders_df, table_name=bronze_orders_table, merge_keys=["Order ID", "Row ID"])
 
     print("Bronze layer ingestion completed successfully. All data quality checks passed.")
     print("Incremental merge strategy applied to all bronze tables.")

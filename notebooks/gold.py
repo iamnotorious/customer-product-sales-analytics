@@ -19,10 +19,10 @@ from sales_analytics.aggregation import create_aggregates
 silver_enriched_orders_table = "sales.silver.sales_ecommerce_enriched_orders"
 gold_profit_aggregates_table = "sales.gold.sales_ecommerce_profit_aggregates"
 
-def read_silver_data(spark_session: SparkSession) -> DataFrame:
+def read_silver_data(*, spark_session: SparkSession) -> DataFrame:
     return read_data(spark=spark_session, table_name=silver_enriched_orders_table)
 
-def calculate_profit_aggregates(df: DataFrame) -> DataFrame:
+def calculate_profit_aggregates(*, df: DataFrame) -> DataFrame:
     return create_aggregates(
         df=df,
         group_by_cols=["year", "category", "sub_category", "customer_name"],
@@ -31,7 +31,7 @@ def calculate_profit_aggregates(df: DataFrame) -> DataFrame:
         round_places=2
     )
 
-def merge_to_gold(df: DataFrame):
+def merge_to_gold(*, df: DataFrame):
     """
     Incrementally merge aggregates to Gold layer.
     For aggregate tables, we use merge to update existing aggregates and add new ones.
@@ -59,7 +59,7 @@ def merge_to_gold(df: DataFrame):
             partition_by=["year"]
         )
 
-def perform_analysis_output(spark_session: SparkSession):
+def perform_analysis_output(*, spark_session: SparkSession):
     """
     Outputs the requested aggregates using SQL on the created gold table.
     """
@@ -111,12 +111,12 @@ if __name__ == "__main__":
     try:
         # Read
         print("Reading Silver enriched data...")
-        enriched_df = read_silver_data(spark)
+        enriched_df = read_silver_data(spark_session=spark)
         print(f"Loaded {enriched_df.count()} enriched order records")
         
         # Calculate aggregates
         print("Calculating profit aggregates...")
-        gold_aggregates = calculate_profit_aggregates(enriched_df)
+        gold_aggregates = calculate_profit_aggregates(df=enriched_df)
         
         # Validate aggregates
         print("Validating aggregate data...")
@@ -124,13 +124,13 @@ if __name__ == "__main__":
         print(f"Generated {agg_count} aggregate records")
         
         # Write with incremental merge
-        merge_to_gold(gold_aggregates)
+        merge_to_gold(df=gold_aggregates)
         
         # Perform Analysis
         print("\n" + "="*60)
         print("ANALYSIS OUTPUTS")
         print("="*60 + "\n")
-        perform_analysis_output(spark)
+        perform_analysis_output(spark_session=spark)
 
         print("\nGold layer aggregation and analysis completed successfully.")
         print("Incremental merge strategy applied to gold aggregates table.")
