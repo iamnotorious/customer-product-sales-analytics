@@ -20,7 +20,7 @@ def validate_schema(df: DataFrame, required_columns: list) -> bool:
 def check_duplicates(df: DataFrame, key_columns: list) -> dict:
     """Count duplicate records by key."""
     total_count = df.count()
-    unique_count = df.select(key_columns).distinct().count()
+    unique_count = df.select(*key_columns).distinct().count()
     duplicate_count = total_count - unique_count
     
     result = {
