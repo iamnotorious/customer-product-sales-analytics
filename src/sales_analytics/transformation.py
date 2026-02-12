@@ -1,13 +1,37 @@
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, current_timestamp, broadcast
 
-def clean_text(df: DataFrame, column_name: str) -> DataFrame:
+def clean_text(df: DataFrame, column_name: str, aggressive_name_clean: bool = False) -> DataFrame:
     """
-    Removes special characters from a text column, keeping alphanumeric and spaces.
-    Example: "Leather___Chair!!!" -> "Leather Chair"
+    Cleans text based on specified rules.
+    If aggressive_name_clean is True:
+    1. Replaces digits and special characters with spaces.
+    2. Replaces multiple spaces (2 or more) with an empty string.
+    This preserves single spaces (like between first and last name) 
+    but collapses sequences and removes numeric/symbolic noise.
     """
-    # Regex explanation: [^a-zA-Z0-9\s] means 'not alphanumeric or whitespace'
-    return df.withColumn(column_name, regexp_replace(col(column_name), r'[^a-zA-Z0-9\s]', ''))
+    from pyspark.sql.functions import trim
+    
+    if aggressive_name_clean:
+        # Step 1: Remove sequences of 2 or more digits Entirely
+        df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}', ' '))
+        
+        # Step 2: Map isolated single digits (leetspeak)
+        # (Remaining digits at this point are isolated single digits)
+        df = df.withColumn(column_name, regexp_replace(col(column_name), "1", "l"))
+        df = df.withColumn(column_name, regexp_replace(col(column_name), "0", "o"))
+        df = df.withColumn(column_name, regexp_replace(col(column_name), "5", "s"))
+        
+        # Rule 1: Replace remaining digits (not in map) and special characters with a space
+        df = df.withColumn(column_name, regexp_replace(col(column_name), r'[^a-zA-Z\s]', ' '))
+        
+        # Rule 2: Replace multiple spaces (2 or more) with an empty string
+        df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s{2,}', ''))
+        
+        return df.withColumn(column_name, trim(col(column_name)))
+    
+    # Default: Remove special characters, keep alphanumeric and spaces
+    return df.withColumn(column_name, trim(regexp_replace(col(column_name), r'[^a-zA-Z0-9\s]', '')))
 
 def handle_nulls(df: DataFrame, columns: list, default_value: str = "N/A") -> DataFrame:
     """
@@ -62,6 +86,7 @@ def generate_surrogate_key(df: DataFrame, key_columns: list, sk_column_name: str
 def clean_dataset(
     df: DataFrame, 
     clean_text_cols: list = None, 
+    clean_names_cols: list = None,
     handle_null_cols: list = None, 
     null_fill_value: str = "N/A",
     mandatory_cols: list = None
@@ -71,12 +96,17 @@ def clean_dataset(
     """
     cleaned_df = df
     
-    # 1. Remove special characters
+    # 1. Aggressive name cleaning (follow specific user rules)
+    if clean_names_cols:
+        for col_name in clean_names_cols:
+            cleaned_df = clean_text(cleaned_df, col_name, aggressive_name_clean=True)
+
+    # 2. Standard text cleaning (remove symbols, keep alphanumeric)
     if clean_text_cols:
         for col_name in clean_text_cols:
-            cleaned_df = clean_text(cleaned_df, col_name)
+            cleaned_df = clean_text(cleaned_df, col_name, aggressive_name_clean=False)
             
-    # 2. Handle Nulls
+    # 3. Handle Nulls
     if handle_null_cols:
         cleaned_df = handle_nulls(cleaned_df, handle_null_cols, null_fill_value)
         

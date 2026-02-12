@@ -85,10 +85,16 @@ def transform_customers(*, df: DataFrame) -> DataFrame:
     """Clean customers & add surrogate key."""
     cleaned = clean_dataset(
         df=df, 
-        clean_text_cols=["customer_name"], 
+        clean_names_cols=["customer_name"],
         handle_null_cols=["country", "city", "state", "region"],
         null_fill_value="N/A"
     )
+    
+    # Additional filter for explicit outliers found in the data
+    outliers = ["Sample Company A", "N/A", ""]
+    cleaned = cleaned.filter(~F.col("customer_name").isin(outliers))
+    cleaned = cleaned.filter(~F.col("customer_name").rlike(r"(?i)Sample Company"))
+    
     return generate_surrogate_key(df=cleaned, key_columns=["customer_id"], sk_column_name="customer_key")
 
 def transform_products(*, df: DataFrame) -> DataFrame:

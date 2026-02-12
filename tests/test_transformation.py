@@ -45,7 +45,7 @@ class TestCleanDataset:
     
     def test_clean_text_removes_special_chars(self, spark):
         """Test special character removal from text."""
-        data = [("Product___Name!!!", ), ("Clean_Text",), ("Test@#$Value",)]
+        data = [("Product___Name!!!", ), ("  Clean_Text  ",), ("Test@#$Value",)]
         schema = StructType([StructField("name", StringType(), True)])
         df = spark.createDataFrame(data, schema)
         
@@ -53,7 +53,30 @@ class TestCleanDataset:
         rows = result.collect()
         
         assert "!" not in rows[0]["name"]
+        assert rows[1]["name"] == "CleanText"  # Should be trimmed and special char removed
         assert "@" not in rows[2]["name"]
+    def test_clean_text_removes_digits_for_names(self, spark):
+        """Test: 1 digit -> leetspeak map, 2+ digits -> remove all."""
+        data = [
+            ("  Bi1l Stewart  ", ), 
+            ("5678Shirley Daniels",), 
+            ("Ad       am Hart",),
+            ("Tho   12 mas Boland",),
+            ("N0ra Paige",),
+            ("Helen Wa55erman",)
+        ]
+        schema = StructType([StructField("name", StringType(), True)])
+        df = spark.createDataFrame(data, schema)
+        
+        result = clean_dataset(df, clean_names_cols=["name"])
+        rows = result.collect()
+        
+        assert rows[0]["name"] == "Bill Stewart"    # 1 -> l
+        assert rows[1]["name"] == "Shirley Daniels" # 5678 removed
+        assert rows[2]["name"] == "Adam Hart"       # Multi-space removed
+        assert rows[3]["name"] == "Thomas Boland"   # 12 removed
+        assert rows[4]["name"] == "Nora Paige"      # 0 -> o
+        assert rows[5]["name"] == "Helen Waerman"   # 55 removed (2 digits)
     
     def test_handle_nulls_fills_values(self, spark):
         """Test null value filling."""
