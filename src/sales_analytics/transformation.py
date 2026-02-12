@@ -47,6 +47,18 @@ def deduplicate(df: DataFrame, key_columns: list = None) -> DataFrame:
         return df.dropDuplicates(key_columns)
     return df.dropDuplicates()
 
+def generate_surrogate_key(df: DataFrame, key_columns: list, sk_column_name: str = "sk") -> DataFrame:
+    """
+    Generates a deterministic surrogate key using MD5 hash of business key columns.
+    
+    Args:
+        df: Input DataFrame.
+        key_columns: Business key columns to hash.
+        sk_column_name: Name for the surrogate key column.
+    """
+    from pyspark.sql.functions import md5, concat_ws
+    return df.withColumn(sk_column_name, md5(concat_ws("||", *[col(c) for c in key_columns])))
+
 def clean_dataset(
     df: DataFrame, 
     clean_text_cols: list = None, 

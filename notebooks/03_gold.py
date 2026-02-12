@@ -22,7 +22,7 @@ from sales_analytics.validation import validate_data_range
 from sales_analytics.transformation import add_audit_columns
 
 # Configuration
-silver_enriched_orders_table = "sales.silver.sales_ecommerce_enriched_orders"
+silver_enriched_orders_table = "sales.silver.ft_enriched_orders"
 gold_profit_aggregates_table = "sales.gold.sales_ecommerce_profit_aggregates"
 
 def read_silver_data(*, spark_session: SparkSession) -> DataFrame:
