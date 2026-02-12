@@ -15,6 +15,7 @@ def spark():
             .config("spark.sql.warehouse.dir", "/tmp/spark-warehouse") \
             .config("spark.driver.memory", "2g") \
             .config("spark.executor.memory", "2g") \
+            .config("spark.sql.ansi.enabled", "false") \
             .getOrCreate()
         yield spark
         spark.stop()

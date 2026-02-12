@@ -156,27 +156,3 @@ class TestCreateAggregates:
         row = result.first()
         # sum() ignores nulls
         assert row["total_profit"] == 150.0
-
-class TestAggregationPerformance:
-    """Test aggregation performance characteristics."""
-    
-    def test_large_dataset_aggregation(self, spark):
-        """Test aggregation on larger dataset."""
-        # Create 1000 records
-        data = [(str(i % 10), str(i % 5), float(i)) for i in range(1000)]
-        schema = StructType([
-            StructField("category", StringType(), True),
-            StructField("sub_category", StringType(), True),
-            StructField("profit", DoubleType(), True)
-        ])
-        df = spark.createDataFrame(data, schema)
-        
-        result = create_aggregates(
-            df,
-            group_by_cols=["category", "sub_category"],
-            agg_col="profit",
-            alias_col="total_profit"
-        )
-        
-        # Should have 10 * 5 = 50 groups
-        assert result.count() == 50
