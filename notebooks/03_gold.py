@@ -126,3 +126,9 @@ if __name__ == "__main__":
 # MAGIC FROM sales.gold.sales_ecommerce_profit_aggregates
 # MAGIC GROUP BY customer_name, order_year 
 # MAGIC ORDER BY customer_name, order_year
+
+# COMMAND ----------
+
+# DBTITLE 1,Final Profit Aggregates
+# MAGIC %sql
+# MAGIC select * from sales.gold.sales_ecommerce_profit_aggregates;
