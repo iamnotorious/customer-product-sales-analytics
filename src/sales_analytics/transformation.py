@@ -1,5 +1,5 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, try_to_date, current_timestamp, broadcast
+from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, current_timestamp, broadcast
 
 def clean_text(df: DataFrame, column_name: str) -> DataFrame:
     """
@@ -110,10 +110,10 @@ def calculate_metric(df: DataFrame, metric_col: str, round_places: int = 2) -> D
 def parse_date_col(df: DataFrame, date_col: str, date_format: str, output_col: str = None) -> DataFrame:
     """
     Parses a string date column to a proper DateType.
-    Uses try_to_date to handle invalid formats gracefully (returns NULL).
+    Expects valid date formats or environment configured to return null on error.
     """
     target_col = output_col if output_col else date_col
-    return df.withColumn(target_col, try_to_date(col(date_col), lit(date_format)))
+    return df.withColumn(target_col, to_date(col(date_col), date_format))
 
 def add_year_col(df: DataFrame, date_col: str, year_col_name: str = "year") -> DataFrame:
     """
