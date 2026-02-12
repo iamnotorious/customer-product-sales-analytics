@@ -1,5 +1,5 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, current_timestamp
+from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, current_timestamp, broadcast
 
 def clean_text(df: DataFrame, column_name: str) -> DataFrame:
     """
@@ -90,11 +90,15 @@ def join_dataframes(
     left_df: DataFrame, 
     right_df: DataFrame, 
     join_on: str, 
-    join_type: str = "left"
+    join_type: str = "left",
+    broadcast_right: bool = False
 ) -> DataFrame:
     """
     Generic function to join two dataframes.
+    Optionally broadcasts the right DataFrame for Map-Side Join.
     """
+    if broadcast_right:
+        return left_df.join(broadcast(right_df), join_on, join_type)
     return left_df.join(right_df, join_on, join_type)
 
 def calculate_metric(df: DataFrame, metric_col: str, round_places: int = 2) -> DataFrame:
@@ -102,9 +106,6 @@ def calculate_metric(df: DataFrame, metric_col: str, round_places: int = 2) -> D
     Rounds a specific metric column.
     """
     return df.withColumn(metric_col, round(col(metric_col), round_places))
-
-# Helper for date parsing since raw data has '21/8/2016' format
-from pyspark.sql.functions import to_date, year, format_number
 
 def parse_date_col(df: DataFrame, date_col: str, date_format: str, output_col: str = None) -> DataFrame:
     """

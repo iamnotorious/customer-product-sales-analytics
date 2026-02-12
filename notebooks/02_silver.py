@@ -125,32 +125,35 @@ def build_fact_table(*, orders: DataFrame) -> DataFrame:
     enriched = generate_surrogate_key(df=orders, key_columns=["customer_id"], sk_column_name="customer_key")
     enriched = generate_surrogate_key(df=enriched, key_columns=["product_id"], sk_column_name="product_key")
     enriched = enriched.withColumn("profit", F.round(F.col("profit"), 2))
+    enriched = enriched.withColumn("order_year", F.year(F.col("order_date")))
     
     fact_columns = [
         "order_id", "order_date", "ship_date", "ship_mode",
         "customer_key", "product_key",
-        "quantity", "price", "discount", "profit"
+        "quantity", "price", "discount", "profit", "order_year"
     ]
     return enriched.select(*[c for c in fact_columns if c in enriched.columns])
 
 def build_enriched_orders(*, fact_df: DataFrame, customers: DataFrame, products: DataFrame) -> DataFrame:
     """Create denormalized view (Fact + Dims)."""
-    # Join fact with customers on surrogate key
+    # Join fact with customers on surrogate key (Broadcast)
     enriched = join_dataframes(
         left_df=fact_df,
         right_df=customers.select("customer_key", "customer_name", "country"),
         join_on="customer_key",
-        join_type="left"
+        join_type="left",
+        broadcast_right=True
     )
-    # Join with products on surrogate key
+    # Join with products on surrogate key (Broadcast)
     enriched = join_dataframes(
         left_df=enriched,
         right_df=products.select("product_key", "category", "sub_category"),
         join_on="product_key",
-        join_type="left"
+        join_type="left",
+        broadcast_right=True
     )
-    # Add year derived from order_date
-    enriched = enriched.withColumn("order_year", F.date_trunc("year", F.col("order_date")))
+    # Add year derived from order_date (integer for clean reporting)
+    enriched = enriched.withColumn("order_year", F.year(F.col("order_date")))
     
     # Handle NULLs from failed joins
     enriched = enriched.fillna("N/A", subset=["customer_name", "country", "category", "sub_category"])
@@ -204,7 +207,6 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
         write_data(df=prod_df_scd, mode="overwrite", table_name=silver_dim_products_table)
     
     # --- Fact: Orders (partition overwrite by order_date) ---
-    # --- Fact: Orders (partition overwrite by order_date) ---
     logger.info("Writing Fact table (partitioned)...")
     write_data(
         df=fact_df, 
@@ -214,7 +216,6 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
     )
     
     # --- Enriched Orders (denormalized view, partitioned by order_date) ---
-    # --- Enriched Orders (denormalized view, partitioned by order_date) ---
     logger.info("Writing Enriched Orders (partitioned)...")
     write_data(
         df=enriched_df, 
@@ -222,7 +223,7 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
         table_name=silver_enriched_orders_table, 
         partition_by=["order_date"]
     )
-
+    
 # Execution
 
 # COMMAND ----------
@@ -257,34 +258,44 @@ if __name__ == "__main__":
         
         # Transform dimensions (with surrogate keys)
         logger.info("Transforming dimensions")
-        silver_cust = transform_customers(df=bronze_cust)
-        silver_prod = transform_products(df=bronze_prod)
+        silver_cust_clean = transform_customers(df=bronze_cust)
+        silver_prod_clean = transform_products(df=bronze_prod)
         
         # Transform orders and apply date filter
         logger.info("Transforming orders")
-        silver_ord = transform_orders(df=bronze_ord)
-        silver_ord = filter_orders_by_date(df=silver_ord, start_date=start_date, end_date=end_date)
+        silver_ord_clean = transform_orders(df=bronze_ord)
+        silver_ord_clean = filter_orders_by_date(df=silver_ord_clean, start_date=start_date, end_date=end_date)
         
 
         
         # Build fact table with surrogate keys
         logger.info("Building fact table")
-        fact_df = build_fact_table(orders=silver_ord)
+        fact_df_clean = build_fact_table(orders=silver_ord_clean)
+        
+        # Cache intermediate dfs (clean versions) to reuse
+        silver_cust_clean.cache()
+        silver_prod_clean.cache()
+        fact_df_clean.cache()
         
         # Build enriched orders (denormalized: joins fact + dims)
         logger.info("Building enriched orders")
-        enriched_df = build_enriched_orders(fact_df=fact_df, customers=silver_cust, products=silver_prod)
+        enriched_df = build_enriched_orders(fact_df=fact_df_clean, customers=silver_cust_clean, products=silver_prod_clean)
         
         logger.info("Enrichment complete")
         
         # Add audit columns
-        silver_cust = add_audit_columns(df=silver_cust)
-        silver_prod = add_audit_columns(df=silver_prod)
-        fact_df = add_audit_columns(df=fact_df)
-        enriched_df = add_audit_columns(df=enriched_df)
+        silver_cust_final = add_audit_columns(df=silver_cust_clean)
+        silver_prod_final = add_audit_columns(df=silver_prod_clean)
+        fact_df_final = add_audit_columns(df=fact_df_clean)
+        enriched_df_final = add_audit_columns(df=enriched_df)
         
         # Write Star Schema tables + enriched view
-        merge_to_silver(cust_df=silver_cust, prod_df=silver_prod, fact_df=fact_df, enriched_df=enriched_df)
+        merge_to_silver(
+            cust_df=silver_cust_final, 
+            prod_df=silver_prod_final, 
+            fact_df=fact_df_final, 
+            enriched_df=enriched_df_final
+        )
         
         # Optimize tables with Z-ORDER
         logger.info("Optimizing tables...")
@@ -308,6 +319,11 @@ if __name__ == "__main__":
         logger.info("SCD2 applied")
         logger.info("Fact table partitioned")
         logger.info("Enriched view created")
+        
+        # Unpersist cached DataFrames
+        silver_cust_clean.unpersist()
+        silver_prod_clean.unpersist()
+        fact_df_clean.unpersist()
         
     except Exception as e:
         logger.error(f"Error in Silver layer processing: {e}")
