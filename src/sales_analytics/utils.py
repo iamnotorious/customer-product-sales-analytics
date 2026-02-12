@@ -97,6 +97,33 @@ def write_data(df: DataFrame, file_format: str = "delta", mode: str = "append", 
         logger.error(f"Error writing data: {e}")
         raise e
 
+def optimize_table(table_name: str, zorder_columns: list = None, where: str = None):
+    """
+    Run OPTIMIZE on a Delta table with optional Z-ORDER and WHERE clause.
+    
+    Args:
+        table_name: Fully qualified table name
+        zorder_columns: Columns to Z-ORDER by
+        where: SQL predicate to limit optimization scope (e.g., "date >= '2020-01-01'")
+    """
+    spark = SparkSession.getActiveSession()
+    
+    sql = f"OPTIMIZE {table_name}"
+    
+    if where:
+        sql += f" WHERE {where}"
+        logger.info(f"Optimizing {table_name} where {where}...")
+    else:
+        logger.info(f"Optimizing full table {table_name}...")
+        
+    if zorder_columns:
+        zorder_clause = ", ".join(zorder_columns)
+        sql += f" ZORDER BY ({zorder_clause})"
+        logger.info(f"...with Z-ORDER BY ({zorder_clause})")
+    
+    spark.sql(sql)
+    logger.info(f"OPTIMIZE completed for {table_name}")
+
 def merge_data(df: DataFrame, table_name: str, merge_keys: list, update_columns: list = None):
     """
     Incrementally merge data into a Delta table using upsert logic.
