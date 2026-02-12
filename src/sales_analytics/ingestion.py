@@ -40,9 +40,12 @@ def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructTy
 
     if schema:
         from pyspark.sql.functions import col as spark_col
+        schema_col_names = [field.name for field in schema.fields]
         for field in schema.fields:
             if field.name in spark_df.columns:
                 spark_df = spark_df.withColumn(field.name, spark_col(field.name).cast(field.dataType))
+        # Keep only columns defined in the schema
+        spark_df = spark_df.select(*[c for c in schema_col_names if c in spark_df.columns])
 
     return spark_df
 
