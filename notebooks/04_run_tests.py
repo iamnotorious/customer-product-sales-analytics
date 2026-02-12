@@ -16,6 +16,9 @@ import pytest
 import os
 import sys
 
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 # Dynamically find and append the 'src' and 'tests' directories
 current_dir = os.getcwd()
 project_root = None
