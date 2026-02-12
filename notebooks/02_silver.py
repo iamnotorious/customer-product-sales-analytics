@@ -25,7 +25,7 @@ dbutils.widgets.text("end_date", "", "End Date (yyyy-MM-dd)")
 import os
 import sys
 
-# Dynamically find and append the 'src' directory
+# Add src to sys.path
 current_dir = os.getcwd()
 while current_dir != "/":
     if os.path.exists(os.path.join(current_dir, "src")):
@@ -42,9 +42,9 @@ import pyspark.sql.functions as F
 
 logger = logging.getLogger(__name__)
 
-from sales_analytics.utils import get_spark_session, read_data, write_data, merge_data, merge_scd_type2, optimize_table
-from sales_analytics.exceptions import DataTransformationError, DataWriteError
-from sales_analytics.validation import validate_schema
+from sales_analytics.utils import get_spark_session, write_data_to_table, merge_data, merge_scd_type2, optimize_table
+
+from sales_analytics.validation import check_duplicates
 from sales_analytics.transformation import (
     to_snake_case, 
     clean_dataset, 
@@ -72,10 +72,10 @@ silver_enriched_orders_table = "sales.silver.enriched_orders"
 
 def read_bronze_data(*, spark_session: SparkSession):
     """Read Bronze tables."""
-    cust = read_data(spark=spark_session, table_name=bronze_customers_table)
-    prod = read_data(spark=spark_session, table_name=bronze_products_table)
-    ord_ = read_data(spark=spark_session, table_name=bronze_orders_table)
-    return cust, prod, ord_
+    cust = spark_session.read.table(bronze_customers_table)
+    prod = spark_session.read.table(bronze_products_table)
+    orders_df = spark_session.read.table(bronze_orders_table)
+    return cust, prod, orders_df
 
 def standardize_schema(*, df: DataFrame) -> DataFrame:
     """Standardize columns to snake_case."""
@@ -174,41 +174,41 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
     
     # --- Dim: Customers (SCD Type 2) ---
     if spark.catalog.tableExists(silver_dim_customers_table):
-        logger.info("Merging Customers (SCD2)...")
+        logger.info("Merging Customers")
         merge_scd_type2(
             df=cust_df, 
             table_name=silver_dim_customers_table, 
-            business_keys=["customer_id"],
+            merge_keys=["customer_id"],
             compare_columns=["customer_name", "country", "city", "state", "region"]
         )
     else:
-        logger.info("Creating Customers (SCD2)...")
+        logger.info("Creating Customers")
         cust_df_scd = cust_df \
             .withColumn("effective_date", F.to_date(F.current_timestamp())) \
             .withColumn("end_date", F.lit(None).cast("date")) \
             .withColumn("is_current", F.lit(True))
-        write_data(df=cust_df_scd, mode="overwrite", table_name=silver_dim_customers_table)
+        write_data_to_table(df=cust_df_scd, mode="overwrite", table_name=silver_dim_customers_table)
     
     # --- Dim: Products (SCD Type 2) ---
     if spark.catalog.tableExists(silver_dim_products_table):
-        logger.info("Merging Products (SCD2)...")
+        logger.info("Merging Products")
         merge_scd_type2(
             df=prod_df, 
             table_name=silver_dim_products_table, 
-            business_keys=["product_id"],
+            merge_keys=["product_id"],
             compare_columns=["category", "sub_category", "product_name", "price_per_product"]
         )
     else:
-        logger.info("Creating Products (SCD2)...")
+        logger.info("Creating Products")
         prod_df_scd = prod_df \
             .withColumn("effective_date", F.to_date(F.current_timestamp())) \
             .withColumn("end_date", F.lit(None).cast("date")) \
             .withColumn("is_current", F.lit(True))
-        write_data(df=prod_df_scd, mode="overwrite", table_name=silver_dim_products_table)
+        write_data_to_table(df=prod_df_scd, mode="overwrite", table_name=silver_dim_products_table)
     
     # --- Fact: Orders (partition overwrite by order_date) ---
-    logger.info("Writing Fact table (partitioned)...")
-    write_data(
+    logger.info("Writing Fact table")
+    write_data_to_table(
         df=fact_df, 
         mode="overwrite", 
         table_name=silver_ft_orders_table, 
@@ -216,8 +216,8 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
     )
     
     # --- Enriched Orders (denormalized view, partitioned by order_date) ---
-    logger.info("Writing Enriched Orders (partitioned)...")
-    write_data(
+    logger.info("Writing Enriched Orders")
+    write_data_to_table(
         df=enriched_df, 
         mode="overwrite", 
         table_name=silver_enriched_orders_table, 
@@ -251,10 +251,7 @@ if __name__ == "__main__":
         bronze_prod = standardize_schema(df=bronze_prod_raw)
         bronze_ord = standardize_schema(df=bronze_ord_raw)
         
-        # Validate order schema
-        required_order_cols = ["order_id", "customer_id", "product_id", "order_date", "profit"]
-        if not validate_schema(df=bronze_ord, required_columns=required_order_cols):
-            raise DataTransformationError("Order data missing required columns")
+
         
         # Transform dimensions (with surrogate keys)
         logger.info("Transforming dimensions")
@@ -294,27 +291,16 @@ if __name__ == "__main__":
         )
         
         # Optimize tables with Z-ORDER
-        logger.info("Optimizing tables...")
-        
-        opt_where = None
-        if start_date and end_date:
-            opt_where = f"order_date >= '{start_date}' AND order_date <= '{end_date}'"
-            
         optimize_table(
             table_name=silver_ft_orders_table, 
-            zorder_columns=["customer_key", "product_key"],
-            where=opt_where
+            zorder_columns=["customer_key", "product_key"]
         )
         optimize_table(
             table_name=silver_enriched_orders_table, 
-            zorder_columns=["customer_name", "category"],
-            where=opt_where
+            zorder_columns=["customer_name", "category"]
         )
         
         logger.info("Silver layer complete")
-        logger.info("SCD2 applied")
-        logger.info("Fact table partitioned")
-        logger.info("Enriched view created")
         
     except Exception as e:
         logger.error(f"Error in Silver layer processing: {e}")

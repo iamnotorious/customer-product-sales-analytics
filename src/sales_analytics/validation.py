@@ -7,14 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def validate_schema(df: DataFrame, required_columns: list) -> bool:
-    """Check if required columns exist."""
-    missing_cols = set(required_columns) - set(df.columns)
-    if missing_cols:
-        logger.error(f"Missing columns: {missing_cols}")
-        return False
-    logger.info(f"Schema validated: {len(required_columns)} columns")
-    return True
+
 
 
 def check_duplicates(df: DataFrame, key_columns: list) -> dict:
@@ -36,22 +29,7 @@ def check_duplicates(df: DataFrame, key_columns: list) -> dict:
     
     return result
 
-def validate_data_range(df: DataFrame, column: str, min_value=None, max_value=None) -> bool:
-    """Check if values are within range."""
-    if min_value is not None:
-        below_min = df.filter(col(column) < min_value).count()
-        if below_min > 0:
-            logger.error(f"Column '{column}' has {below_min} values below minimum {min_value}")
-            return False
-    
-    if max_value is not None:
-        above_max = df.filter(col(column) > max_value).count()
-        if above_max > 0:
-            logger.error(f"Column '{column}' has {above_max} values above maximum {max_value}")
-            return False
-    
-    logger.info(f"Range validated: {column}")
-    return True
+
 
 def generate_data_quality_report(df: DataFrame, name: str = "Dataset") -> dict:
     """Create quality report (rows, cols, nulls)."""
@@ -70,5 +48,4 @@ def generate_data_quality_report(df: DataFrame, name: str = "Dataset") -> dict:
         null_count = df.filter(col(column).isNull()).count()
         report["null_counts"][column] = null_count
     
-    logger.info(f"Quality Report: {name} ({report['row_count']} rows)")
     return report

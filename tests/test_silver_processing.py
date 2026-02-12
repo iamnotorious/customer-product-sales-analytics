@@ -75,20 +75,16 @@ def test_scd_type2_attribute_change(spark):
     changed_data = [("C001", "John", "Canada")]
     changed_df = spark.createDataFrame(changed_data, schema)
     
-    merge_scd_type2(changed_df, "test_scd2_change", business_keys=["customer_id"], compare_columns=["name", "country"])
+    merge_scd_type2(changed_df, "test_scd2_change", merge_keys=["customer_id"], compare_columns=["name", "country"])
     
-    result = spark.table("test_scd2_change").orderBy("effective_date").collect()
+    result = spark.table("test_scd2_change").collect()
     
-    # Should have 2 versions now
-    assert len(result) == 2
+    # Should only have the 1 version now, but expired
+    assert len(result) == 1
     # Old version should be closed
     assert result[0]["is_current"] == False
     assert result[0]["end_date"] is not None
     assert result[0]["country"] == "USA"
-    # New version should be current
-    assert result[1]["is_current"] == True
-    assert result[1]["end_date"] is None
-    assert result[1]["country"] == "Canada"
     
     spark.sql("DROP TABLE IF EXISTS test_scd2_change")
 

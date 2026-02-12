@@ -9,7 +9,7 @@
 import os
 import sys
 
-# Dynamically find and append the 'src' directory
+# Add src to sys.path
 current_dir = os.getcwd()
 while current_dir != "/":
     if os.path.exists(os.path.join(current_dir, "src")):
@@ -22,10 +22,10 @@ while current_dir != "/":
 # Import libraries
 import logging
 from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql.functions import sum, col, round
 
 logger = logging.getLogger(__name__)
-from sales_analytics.utils import get_spark_session, read_data, write_data, optimize_table
-from sales_analytics.aggregation import create_aggregates
+from sales_analytics.utils import get_spark_session, write_data_to_table, optimize_table
 from sales_analytics.transformation import add_audit_columns
 
 # Configuration
@@ -33,21 +33,18 @@ silver_enriched_orders_table = "sales.silver.enriched_orders"
 gold_profit_aggregates_table = "sales.gold.sales_ecommerce_profit_aggregates"
 
 def read_silver_data(*, spark_session: SparkSession) -> DataFrame:
-    return read_data(spark=spark_session, table_name=silver_enriched_orders_table)
+    return spark_session.read.table(silver_enriched_orders_table)
 
 def calculate_profit_aggregates(*, df: DataFrame) -> DataFrame:
-    return create_aggregates(
-        df=df,
-        group_by_cols=["order_year", "category", "sub_category", "customer_name"],
-        agg_col="profit",
-        alias_col="total_profit",
-        round_places=2
-    )
+    group_cols = ["order_year", "category", "sub_category", "customer_name"]
+    return df.groupBy(*group_cols) \
+        .agg(round(sum("profit"), 2).alias("total_profit")) \
+        .orderBy(*group_cols)
 
 def merge_to_gold(*, df: DataFrame):
     """Write aggregates to Gold (Partition Overwrite)."""
-    logger.info("Writing Aggregates (partitioned)...")
-    write_data(
+    logger.info("Writing Aggregates")
+    write_data_to_table(
         df=df, 
         mode="overwrite", 
         table_name=gold_profit_aggregates_table,
@@ -83,7 +80,7 @@ if __name__ == "__main__":
         optimize_table(table_name=gold_profit_aggregates_table, zorder_columns=["customer_name", "category"])
         
         logger.info("Gold layer complete")
-        logger.info("Partition overwrite applied")
+
         
     except Exception as e:
         logger.error(f"Error in Gold layer processing: {e}")

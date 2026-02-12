@@ -1,34 +1,11 @@
 import pytest
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
 from sales_analytics.validation import (
-    validate_schema, check_duplicates,
-    validate_data_range, generate_data_quality_report
+    check_duplicates,
+    generate_data_quality_report
 )
 
-def test_validate_schema_success(spark):
-    """Test successful schema validation."""
-    data = [("1", "Alice", 100.0)]
-    schema = StructType([
-        StructField("id", StringType(), True),
-        StructField("name", StringType(), True),
-        StructField("amount", DoubleType(), True)
-    ])
-    df = spark.createDataFrame(data, schema)
-    
-    required_cols = ["id", "name", "amount"]
-    assert validate_schema(df, required_cols) == True
 
-def test_validate_schema_failure(spark):
-    """Test schema validation with missing columns."""
-    data = [("1", "Alice")]
-    schema = StructType([
-        StructField("id", StringType(), True),
-        StructField("name", StringType(), True)
-    ])
-    df = spark.createDataFrame(data, schema)
-    
-    required_cols = ["id", "name", "amount"]
-    assert validate_schema(df, required_cols) == False
 
 def test_check_duplicates_none(spark):
     """Test duplicate check with no duplicates."""
@@ -56,27 +33,7 @@ def test_check_duplicates_present(spark):
     assert result["duplicate_count"] == 1
     assert result["total_count"] == 3
 
-def test_validate_data_range_success(spark):
-    """Test data range validation success."""
-    data = [(1, 50.0), (2, 75.0), (3, 100.0)]
-    schema = StructType([
-        StructField("id", IntegerType(), True),
-        StructField("value", DoubleType(), True)
-    ])
-    df = spark.createDataFrame(data, schema)
-    
-    assert validate_data_range(df, "value", min_value=0, max_value=150) == True
 
-def test_validate_data_range_failure(spark):
-    """Test data range validation failure."""
-    data = [(1, -10.0), (2, 75.0), (3, 100.0)]
-    schema = StructType([
-        StructField("id", IntegerType(), True),
-        StructField("value", DoubleType(), True)
-    ])
-    df = spark.createDataFrame(data, schema)
-    
-    assert validate_data_range(df, "value", min_value=0, max_value=150) == False
 
 def test_generate_data_quality_report(spark):
     """Test data quality report generation."""

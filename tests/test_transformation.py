@@ -3,7 +3,7 @@ from pyspark.sql.types import StructType, StructField, StringType, DoubleType, I
 from pyspark.sql.functions import col
 from sales_analytics.transformation import (
     clean_dataset, to_snake_case, join_dataframes, 
-    calculate_metric, parse_date_col, add_year_col
+    parse_date_col
 )
 
 class TestToSnakeCase:
@@ -87,20 +87,7 @@ class TestCleanDataset:
 class TestTransformationFunctions:
     """Test suite for transformation utility functions."""
     
-    def test_calculate_metric_rounds_correctly(self, spark):
-        """Test metric rounding."""
-        data = [(1, 123.456), (2, 789.123)]
-        schema = StructType([
-            StructField("id", IntegerType(), True),
-            StructField("profit", DoubleType(), True)
-        ])
-        df = spark.createDataFrame(data, schema)
-        
-        result = calculate_metric(df, metric_col="profit", round_places=2)
-        rows = result.collect()
-        
-        assert rows[0]["profit"] == 123.46
-        assert rows[1]["profit"] == 789.12
+
     
     def test_parse_date_col_parses_correctly(self, spark):
         """Test date parsing with custom format."""
@@ -114,23 +101,7 @@ class TestTransformationFunctions:
         from datetime import date
         assert rows[0]["date_str"] == date(2016, 8, 21)
     
-    def test_add_year_col_extracts_year(self, spark):
-        """Test year extraction from date column."""
-        from datetime import date
-        data = [(date(2016, 8, 21),), (date(2020, 3, 15),)]
-        schema = StructType([StructField("order_date", StringType(), True)])  # DateType in real use
-        df = spark.createDataFrame(data, schema)
-        
-        # Convert string to date first
-        from pyspark.sql.functions import to_date
-        df = df.withColumn("order_date", to_date(col("order_date")))
-        
-        result = add_year_col(df, date_col="order_date", year_col_name="year")
-        
-        assert "year" in result.columns
-        rows = result.collect()
-        assert rows[0]["year"] == 2016
-        assert rows[1]["year"] == 2020
+
     
     def test_join_dataframes_inner_join(self, spark):
         """Test inner join between two DataFrames."""

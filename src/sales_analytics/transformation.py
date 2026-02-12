@@ -101,11 +101,7 @@ def join_dataframes(
         return left_df.join(broadcast(right_df), join_on, join_type)
     return left_df.join(right_df, join_on, join_type)
 
-def calculate_metric(df: DataFrame, metric_col: str, round_places: int = 2) -> DataFrame:
-    """
-    Rounds a specific metric column.
-    """
-    return df.withColumn(metric_col, round(col(metric_col), round_places))
+
 
 def parse_date_col(df: DataFrame, date_col: str, date_format: str, output_col: str = None) -> DataFrame:
     """
@@ -115,8 +111,4 @@ def parse_date_col(df: DataFrame, date_col: str, date_format: str, output_col: s
     target_col = output_col if output_col else date_col
     return df.withColumn(target_col, to_date(col(date_col), date_format))
 
-def add_year_col(df: DataFrame, date_col: str, year_col_name: str = "year") -> DataFrame:
-    """
-    Adds a year column extracted from a date column.
-    """
-    return df.withColumn(year_col_name, year(col(date_col)))
+

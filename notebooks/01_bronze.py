@@ -17,8 +17,7 @@ dbutils.library.restartPython()
 import sys
 import os
 
-# Add the src directory to path
-# Dynamically find and append the 'src' directory
+# Add src to sys.path
 current_dir = os.getcwd()
 while current_dir != "/":
     if os.path.exists(os.path.join(current_dir, "src")):
@@ -32,9 +31,9 @@ while current_dir != "/":
 import logging
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, DateType
-from sales_analytics.utils import get_spark_session, write_data, merge_data
+from sales_analytics.utils import get_spark_session, write_data_to_table, merge_data
 from sales_analytics.ingestion import ingest_file
-from sales_analytics.exceptions import DataIngestionError, DataWriteError
+
 from sales_analytics.validation import generate_data_quality_report, check_duplicates
 from sales_analytics.transformation import to_snake_case, add_audit_columns, deduplicate
 
@@ -90,7 +89,7 @@ order_schema = StructType([
 ])
 
 def ingest_customers_data(*, spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
-    """Ingest customers (Excel)."""
+    """Ingest customers."""
     try:
         df = ingest_file(
             spark=spark_session, 
@@ -103,11 +102,11 @@ def ingest_customers_data(*, spark_session: SparkSession, source_path: str, sche
         return df
     except Exception as e:
         logger.error(f"Customer ingestion failed: {e}")
-        raise DataIngestionError(f"Failed to ingest customers from {source_path}") from e
+        raise Exception(f"Failed to ingest customers from {source_path}") from e
 
 def ingest_products_data(*, spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
-    """Ingest products (CSV)."""
-    logger.info("Ingesting Products...")
+    """Ingest products."""
+    logger.info("Ingesting: Products")
     try:
         df = ingest_file(
             spark=spark_session, 
@@ -120,11 +119,11 @@ def ingest_products_data(*, spark_session: SparkSession, source_path: str, schem
         return df
     except Exception as e:
         logger.error(f"Product ingestion failed: {e}")
-        raise DataIngestionError(f"Failed to ingest products from {source_path}") from e
+        raise Exception(f"Failed to ingest products from {source_path}") from e
 
 def ingest_orders_data(*, spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
-    """Ingest orders (JSON)."""
-    logger.info("Ingesting Orders...")
+    """Ingest orders."""
+    logger.info("Ingesting: Orders")
     try:
         df = ingest_file(
             spark=spark_session, 
@@ -137,7 +136,7 @@ def ingest_orders_data(*, spark_session: SparkSession, source_path: str, schema:
         return df
     except Exception as e:
         logger.error(f"Order ingestion failed: {e}")
-        raise DataIngestionError(f"Failed to ingest orders from {source_path}") from e
+        raise Exception(f"Failed to ingest orders from {source_path}") from e
 
 def validate_bronze_data(*, df: DataFrame, name: str, key_columns: list):
     """Validate data quality."""
@@ -161,8 +160,8 @@ def merge_to_bronze(*, df: DataFrame, table_name: str, merge_keys: list):
         table_exists = spark.catalog.tableExists(table_name)
         
         if not table_exists:
-            logger.info(f"Creating table: {table_name}")
-            write_data(df=df, mode="overwrite", table_name=table_name)
+            logger.info(f"Creating: {table_name}")
+            write_data_to_table(df=df, mode="overwrite", table_name=table_name)
             logger.info(f"Created: {table_name}")
         else:
             logger.info(f"Merging: {table_name}")
@@ -171,7 +170,7 @@ def merge_to_bronze(*, df: DataFrame, table_name: str, merge_keys: list):
             
     except Exception as e:
         logger.error(f"Merge failed: {table_name} -> {e}")
-        raise DataWriteError(f"Failed to merge to {table_name}") from e
+        raise Exception(f"Failed to merge to {table_name}") from e
 
 # Execution
 
@@ -203,6 +202,6 @@ if __name__ == "__main__":
     orders_df = deduplicate(df=orders_df, key_columns=["order_id", "row_id"])
     orders_df = add_audit_columns(df=orders_df, source_file=order_source_path)
     validate_bronze_data(df=orders_df, name="Orders", key_columns=["order_id", "row_id"])
-    write_data(df=orders_df, mode="overwrite", table_name=bronze_orders_table, partition_by=["order_date"])
+    write_data_to_table(df=orders_df, mode="overwrite", table_name=bronze_orders_table, partition_by=["order_date"])
 
     logger.info("Bronze layer complete")
