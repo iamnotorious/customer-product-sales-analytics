@@ -6,9 +6,10 @@
 
 # COMMAND ----------
 
-# Install local package
 import sys
-import os
+sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
+
+# COMMAND ----------
 
 # Import libraries
 import logging

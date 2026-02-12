@@ -22,6 +22,11 @@ dbutils.widgets.text("end_date", "", "End Date (yyyy-MM-dd)")
 
 # COMMAND ----------
 
+import sys
+sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
+
+# COMMAND ----------
+
 # Import libraries
 import logging
 from pyspark.sql import SparkSession, DataFrame
