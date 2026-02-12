@@ -18,7 +18,6 @@ tables_to_drop = [
     # Silver Layer
     "sales.silver.enriched_orders",
     "sales.silver.ft_sales_ecommerce_orders",
-    "sales.silver.ft_enriched_orders", # Dropping old name if exists
     "sales.silver.dim_customers",
     "sales.silver.dim_products",
     
