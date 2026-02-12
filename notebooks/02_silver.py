@@ -151,6 +151,9 @@ def build_enriched_orders(*, fact_df: DataFrame, customers: DataFrame, products:
     # Add year derived from order_date
     enriched = enriched.withColumn("order_year", F.date_trunc("year", F.col("order_date")))
     
+    # Handle NULLs from failed joins
+    enriched = enriched.fillna("N/A", subset=["customer_name", "country", "category", "sub_category"])
+    
     enriched_columns = [
         "order_id", "order_date", "ship_date", "ship_mode",
         "customer_key", "product_key",
