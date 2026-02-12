@@ -13,19 +13,21 @@ def clean_text(df: DataFrame, column_name: str, aggressive_name_clean: bool = Fa
     from pyspark.sql.functions import trim
     
     if aggressive_name_clean:
-        # Step 1: Remove sequences of 2 or more digits Entirely
-        df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}', ' '))
+        # Step 0: Handle combined leetspeak (1l -> ll)
+        df = df.withColumn(column_name, regexp_replace(col(column_name), "1l", "ll"))
         
-        # Step 2: Map isolated single digits (leetspeak)
-        # (Remaining digits at this point are isolated single digits)
+        # Step 1: Map common "leetspeak" typos (Single digits)
+        # We do this BEFORE removing multi-digits to preserve things like Wa55erman
         df = df.withColumn(column_name, regexp_replace(col(column_name), "1", "l"))
         df = df.withColumn(column_name, regexp_replace(col(column_name), "0", "o"))
         df = df.withColumn(column_name, regexp_replace(col(column_name), "5", "s"))
         
-        # Rule 1: Replace remaining digits (not in map) and special characters with a space
-        df = df.withColumn(column_name, regexp_replace(col(column_name), r'[^a-zA-Z\s]', ' '))
+        # Rule 1: Replace digits and special characters with a space
+        # [^\p{L}\s\'] means "Any character that is NOT a Unicode letter, space, or apostrophe"
+        df = df.withColumn(column_name, regexp_replace(col(column_name), r'[^\p{L}\s\']', ' '))
         
         # Rule 2: Replace multiple spaces (2 or more) with an empty string
+        # This heals names like "Ad   am" -> "Adam"
         df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s{2,}', ''))
         
         return df.withColumn(column_name, trim(col(column_name)))
