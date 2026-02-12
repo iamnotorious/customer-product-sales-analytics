@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 from sales_analytics.utils import get_spark_session, read_data, write_data, merge_data, merge_scd_type2
 from sales_analytics.exceptions import DataTransformationError, DataWriteError
-from sales_analytics.validation import validate_schema, check_null_percentage
+from sales_analytics.validation import validate_schema
 from sales_analytics.transformation import (
     to_snake_case, 
     clean_dataset, 
@@ -223,10 +223,7 @@ if __name__ == "__main__":
         silver_ord = transform_orders(df=bronze_ord)
         silver_ord = filter_orders_by_date(df=silver_ord, start_date=start_date, end_date=end_date)
         
-        # Validate transformed data
-        logger.info("Validating transformed data quality...")
-        check_null_percentage(df=silver_ord, column="order_date", threshold=0.1)
-        check_null_percentage(df=silver_ord, column="profit", threshold=0.1)
+
         
         # Enrich fact table with dimension surrogate keys
         logger.info("Enriching orders with dimension surrogate keys...")

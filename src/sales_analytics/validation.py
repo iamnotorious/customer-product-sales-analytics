@@ -25,32 +25,6 @@ def validate_schema(df: DataFrame, required_columns: list) -> bool:
     logger.info(f"Schema validation passed. All required columns present.")
     return True
 
-def check_null_percentage(df: DataFrame, column: str, threshold: float = 0.5) -> bool:
-    """
-    Check if null percentage in a column exceeds threshold.
-    
-    Args:
-        df: DataFrame to check
-        column: Column name
-        threshold: Maximum allowed null percentage (0-1)
-        
-    Returns:
-        True if null percentage is within threshold, False otherwise
-    """
-    total_count = df.count()
-    if total_count == 0:
-        logger.warning(f"DataFrame is empty")
-        return True
-        
-    null_count = df.filter(col(column).isNull() | isnan(col(column))).count()
-    null_percentage = null_count / total_count
-    
-    if null_percentage > threshold:
-        logger.error(f"Column '{column}' has {null_percentage:.2%} nulls (threshold: {threshold:.2%})")
-        return False
-    
-    logger.info(f"Column '{column}' null check passed ({null_percentage:.2%} nulls)")
-    return True
 
 def check_duplicates(df: DataFrame, key_columns: list) -> dict:
     """

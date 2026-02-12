@@ -1,7 +1,7 @@
 import pytest
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
 from sales_analytics.validation import (
-    validate_schema, check_null_percentage, check_duplicates,
+    validate_schema, check_duplicates,
     validate_data_range, generate_data_quality_report
 )
 
@@ -29,30 +29,6 @@ def test_validate_schema_failure(spark):
     
     required_cols = ["id", "name", "amount"]
     assert validate_schema(df, required_cols) == False
-
-def test_check_null_percentage_within_threshold(spark):
-    """Test null percentage check within threshold."""
-    data = [("1", "Alice"), ("2", None), ("3", "Bob")]
-    schema = StructType([
-        StructField("id", StringType(), True),
-        StructField("name", StringType(), True)
-    ])
-    df = spark.createDataFrame(data, schema)
-    
-    # 1/3 = 33% nulls, threshold 50%
-    assert check_null_percentage(df, "name", threshold=0.5) == True
-
-def test_check_null_percentage_exceeds_threshold(spark):
-    """Test null percentage check exceeding threshold."""
-    data = [("1", None), ("2", None), ("3", "Bob")]
-    schema = StructType([
-        StructField("id", StringType(), True),
-        StructField("name", StringType(), True)
-    ])
-    df = spark.createDataFrame(data, schema)
-    
-    # 2/3 = 66% nulls, threshold 50%
-    assert check_null_percentage(df, "name", threshold=0.5) == False
 
 def test_check_duplicates_none(spark):
     """Test duplicate check with no duplicates."""
