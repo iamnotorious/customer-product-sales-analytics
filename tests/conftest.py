@@ -7,6 +7,8 @@ def spark():
     """Create a Spark session for testing."""
     spark = SparkSession.getActiveSession()
     if spark:
+        # Enforce ANSI mode off for tests to prevent DateTimeExceptions on invalid input
+        spark.conf.set("spark.sql.ansi.enabled", "false")
         yield spark
     else:
         spark = SparkSession.builder \
