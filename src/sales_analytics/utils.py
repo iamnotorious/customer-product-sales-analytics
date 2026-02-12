@@ -9,16 +9,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def get_spark_session(app_name: str = "DatabricksApp") -> SparkSession:
-    """
-    Creates or retrieves a Spark session with optimized configurations.
-    
-    Args:
-        app_name: Name for the Spark application
-        
-    Returns:
-        Configured SparkSession
-    """
-    logger.info(f"Creating Spark session: {app_name}")
+    """Get configured Spark session."""
+    logger.info(f"Starting Spark: {app_name}")
     return SparkSession.builder \
         .appName(app_name) \
         .config("spark.jars.packages", "com.crealytics:spark-excel_2.13:3.5.1_0.20.4") \
@@ -28,25 +20,12 @@ def get_spark_session(app_name: str = "DatabricksApp") -> SparkSession:
         .getOrCreate()
 
 def read_data(spark: SparkSession, file_format: str = "delta", path: str = None, table_name: str = None, schema=None, options: dict = None) -> DataFrame:
-    """
-    Generic function to read data from file path or managed table.
-    
-    Args:
-        spark: SparkSession
-        file_format: Format of the data (delta, parquet, csv, etc.)
-        path: File path to read from
-        table_name: Managed table name to read from
-        schema: Optional schema to apply
-        options: Optional read options
-        
-    Returns:
-        DataFrame containing the read data
-    """
+    """Read data from file or table."""
     if table_name:
-        logger.info(f"Reading from managed table: {table_name}")
+        logger.info(f"Reading table: {table_name}")
         return spark.read.table(table_name)
 
-    logger.info(f"Reading from path: {path} (format: {file_format})")
+    logger.info(f"Reading file: {path} ({file_format})")
     reader = spark.read.format(file_format)
     
     if schema:
@@ -57,84 +36,59 @@ def read_data(spark: SparkSession, file_format: str = "delta", path: str = None,
         
     try:
         df = reader.load(path)
-        logger.info(f"Successfully read data from {path}")
+        logger.info(f"Read complete: {path}")
         return df
     except Exception as e:
-        logger.error(f"Error reading data from {path}: {e}")
+        logger.error(f"Read failed: {path} -> {e}")
         raise e
 
 def write_data(df: DataFrame, file_format: str = "delta", mode: str = "append", path: str = None, table_name: str = None, partition_by: list = None):
-    """
-    Generic function to write data to file path or managed table.
-    
-    Args:
-        df: DataFrame to write
-        file_format: Format to write (delta, parquet, etc.)
-        mode: Write mode (append, overwrite, etc.)
-        path: File path to write to
-        table_name: Managed table name to write to
-        partition_by: Optional list of columns to partition by
-    """
-    logger.info(f"Writing data (mode: {mode})")
+    """Write DataFrame to file or table."""
+    logger.info(f"Writing data (mode={mode})")
     
     writer = df.write.format(file_format).mode(mode)
     
     if partition_by:
-        logger.info(f"Partitioning by: {partition_by}")
+        logger.info(f"Partitioning: {partition_by}")
         writer = writer.partitionBy(*partition_by)
         
     try:
         if table_name:
             writer.saveAsTable(table_name)
-            logger.info(f"Successfully wrote to managed table: {table_name}")
+            logger.info(f"Wrote to table: {table_name}")
         elif path:
             writer.save(path)
-            logger.info(f"Data written successfully to {path}")
+            logger.info(f"Wrote to path: {path}")
         else:
             raise ValueError("Either path or table_name must be provided")
             
     except Exception as e:
-        logger.error(f"Error writing data: {e}")
+        logger.error(f"Write failed: {e}")
         raise e
 
 def optimize_table(table_name: str, zorder_columns: list = None, where: str = None):
-    """
-    Run OPTIMIZE on a Delta table with optional Z-ORDER and WHERE clause.
-    
-    Args:
-        table_name: Fully qualified table name
-        zorder_columns: Columns to Z-ORDER by
-        where: SQL predicate to limit optimization scope (e.g., "date >= '2020-01-01'")
-    """
+    """Run OPTIMIZE on table (with optional Z-ORDER/WHERE)."""
     spark = SparkSession.getActiveSession()
     
     sql = f"OPTIMIZE {table_name}"
     
     if where:
         sql += f" WHERE {where}"
-        logger.info(f"Optimizing {table_name} where {where}...")
+        logger.info(f"Optimizing {table_name} ({where})")
     else:
-        logger.info(f"Optimizing full table {table_name}...")
+        logger.info(f"Optimizing full table: {table_name}")
         
     if zorder_columns:
         zorder_clause = ", ".join(zorder_columns)
         sql += f" ZORDER BY ({zorder_clause})"
-        logger.info(f"...with Z-ORDER BY ({zorder_clause})")
+        logger.info(f"Z-Ordering: {zorder_clause}")
     
     spark.sql(sql)
-    logger.info(f"OPTIMIZE completed for {table_name}")
+    logger.info(f"Optimize complete: {table_name}")
 
 def merge_data(df: DataFrame, table_name: str, merge_keys: list, update_columns: list = None):
-    """
-    Incrementally merge data into a Delta table using upsert logic.
-    
-    Args:
-        df: Source DataFrame with new/updated records
-        table_name: Target Delta table name
-        merge_keys: List of columns to use for matching (primary/business keys)
-        update_columns: Optional list of columns to update. If None, updates all columns.
-    """
-    logger.info(f"Merging data into {table_name} using keys: {merge_keys}")
+    """Merge (Upsert) data into Delta table."""
+    logger.info(f"Merging into {table_name} keys={merge_keys}")
     
     # Create temp view for merge
     df.createOrReplaceTempView("merge_source")
@@ -168,30 +122,17 @@ def merge_data(df: DataFrame, table_name: str, merge_keys: list, update_columns:
         from pyspark.sql import SparkSession
         spark = SparkSession.getActiveSession()
         spark.sql(merge_sql)
-        logger.info(f"Successfully merged data into {table_name}")
+        logger.info(f"Merge complete: {table_name}")
     except Exception as e:
-        logger.error(f"Error merging data into {table_name}: {e}")
+        logger.error(f"Merge failed: {table_name} -> {e}")
         raise e
 
 def merge_scd_type2(df: DataFrame, table_name: str, business_keys: list, compare_columns: list = None):
-    """
-    Merge data using SCD Type 2 logic to maintain historical records.
-    
-    Args:
-        df: Source DataFrame with new/updated records
-        table_name: Target Delta table name
-        business_keys: List of business key columns (e.g., customer_id, product_id)
-        compare_columns: Columns to compare for changes. If None, compares all non-key columns.
-    
-    SCD Type 2 adds:
-        - effective_date: When this version became active
-        - end_date: When this version expired (NULL for current)
-        - is_current: Flag indicating active version
-    """
+    """Apply SCD Type 2 merge (maintains history)."""
     from pyspark.sql.functions import col, lit, current_timestamp, to_date
     from datetime import date
     
-    logger.info(f"Applying SCD Type 2 merge to {table_name} with keys: {business_keys}")
+    logger.info(f"SCD2 Merge: {table_name} keys={business_keys}")
     
     # Add SCD Type 2 columns to source data
     df_with_scd = df \
@@ -262,12 +203,12 @@ def merge_scd_type2(df: DataFrame, table_name: str, business_keys: list, compare
         if changed_count > 0:
             # Insert new current versions
             changed_df.write.format("delta").mode("append").saveAsTable(table_name)
-            logger.info(f"Inserted {changed_count} new versions for changed records")
+            logger.info(f"SCD2: Inserted {changed_count} history records")
         
-        logger.info(f"Successfully applied SCD Type 2 to {table_name}")
+        logger.info(f"SCD2 complete: {table_name}")
         
     except Exception as e:
-        logger.error(f"Error applying SCD Type 2 to {table_name}: {e}")
+        logger.error(f"SCD2 failed: {table_name} -> {e}")
         raise e
 
 

@@ -8,35 +8,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 def validate_schema(df: DataFrame, required_columns: list) -> bool:
-    """
-    Validate that DataFrame contains all required columns.
-    
-    Args:
-        df: DataFrame to validate
-        required_columns: List of required column names
-        
-    Returns:
-        True if all required columns exist, False otherwise
-    """
+    """Check if required columns exist."""
     missing_cols = set(required_columns) - set(df.columns)
     if missing_cols:
-        logger.error(f"Missing required columns: {missing_cols}")
+        logger.error(f"Missing columns: {missing_cols}")
         return False
-    logger.info(f"Schema validation passed. All required columns present.")
+    logger.info(f"Schema validated: {len(required_columns)} columns")
     return True
 
 
 def check_duplicates(df: DataFrame, key_columns: list) -> dict:
-    """
-    Check for duplicate records based on key columns.
-    
-    Args:
-        df: DataFrame to check
-        key_columns: List of columns that define uniqueness
-        
-    Returns:
-        Dictionary with total_count, unique_count, and duplicate_count
-    """
+    """Count duplicate records by key."""
     total_count = df.count()
     unique_count = df.select(key_columns).distinct().count()
     duplicate_count = total_count - unique_count
@@ -48,25 +30,14 @@ def check_duplicates(df: DataFrame, key_columns: list) -> dict:
     }
     
     if duplicate_count > 0:
-        logger.warning(f"Found {duplicate_count} duplicate records based on {key_columns}")
+        logger.warning(f"Duplicates: {duplicate_count} ({key_columns})")
     else:
-        logger.info(f"No duplicates found based on {key_columns}")
+        logger.info(f"No duplicates ({key_columns})")
     
     return result
 
 def validate_data_range(df: DataFrame, column: str, min_value=None, max_value=None) -> bool:
-    """
-    Validate that numeric column values are within expected range.
-    
-    Args:
-        df: DataFrame to check
-        column: Column name
-        min_value: Minimum expected value (optional)
-        max_value: Maximum expected value (optional)
-        
-    Returns:
-        True if all values are within range, False otherwise
-    """
+    """Check if values are within range."""
     if min_value is not None:
         below_min = df.filter(col(column) < min_value).count()
         if below_min > 0:
@@ -79,20 +50,11 @@ def validate_data_range(df: DataFrame, column: str, min_value=None, max_value=No
             logger.error(f"Column '{column}' has {above_max} values above maximum {max_value}")
             return False
     
-    logger.info(f"Column '{column}' range validation passed")
+    logger.info(f"Range validated: {column}")
     return True
 
 def generate_data_quality_report(df: DataFrame, name: str = "Dataset") -> dict:
-    """
-    Generate comprehensive data quality report.
-    
-    Args:
-        df: DataFrame to analyze
-        name: Name of the dataset
-        
-    Returns:
-        Dictionary containing quality metrics
-    """
+    """Create quality report (rows, cols, nulls)."""
     logger.info(f"Generating data quality report for {name}")
     
     report = {
@@ -108,5 +70,5 @@ def generate_data_quality_report(df: DataFrame, name: str = "Dataset") -> dict:
         null_count = df.filter(col(column).isNull()).count()
         report["null_counts"][column] = null_count
     
-    logger.info(f"Data quality report generated for {name}: {report['row_count']} rows, {report['column_count']} columns")
+    logger.info(f"Quality Report: {name} ({report['row_count']} rows)")
     return report

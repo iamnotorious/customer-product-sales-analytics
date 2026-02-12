@@ -22,8 +22,16 @@ dbutils.widgets.text("end_date", "", "End Date (yyyy-MM-dd)")
 
 # COMMAND ----------
 
+import os
 import sys
-sys.path.append("/Workspace/Repos/sales_analytics/customer-product-sales-analytics/src")
+
+# Dynamically find and append the 'src' directory
+current_dir = os.getcwd()
+while current_dir != "/":
+    if os.path.exists(os.path.join(current_dir, "src")):
+        sys.path.append(os.path.join(current_dir, "src"))
+        break
+    current_dir = os.path.dirname(current_dir)
 
 # COMMAND ----------
 
@@ -63,18 +71,18 @@ silver_enriched_orders_table = "sales.silver.enriched_orders"
 # COMMAND ----------
 
 def read_bronze_data(*, spark_session: SparkSession):
-    """Read all bronze layer tables."""
+    """Read Bronze tables."""
     cust = read_data(spark=spark_session, table_name=bronze_customers_table)
     prod = read_data(spark=spark_session, table_name=bronze_products_table)
     ord_ = read_data(spark=spark_session, table_name=bronze_orders_table)
     return cust, prod, ord_
 
 def standardize_schema(*, df: DataFrame) -> DataFrame:
-    """Standardize column names to snake_case."""
+    """Standardize columns to snake_case."""
     return to_snake_case(df=df)
 
 def transform_customers(*, df: DataFrame) -> DataFrame:
-    """Clean customer data and generate surrogate key."""
+    """Clean customers & add surrogate key."""
     cleaned = clean_dataset(
         df=df, 
         clean_text_cols=["customer_name"], 
@@ -84,7 +92,7 @@ def transform_customers(*, df: DataFrame) -> DataFrame:
     return generate_surrogate_key(df=cleaned, key_columns=["customer_id"], sk_column_name="customer_key")
 
 def transform_products(*, df: DataFrame) -> DataFrame:
-    """Clean product data and generate surrogate key."""
+    """Clean products & add surrogate key."""
     cleaned = clean_dataset(
         df=df, 
         clean_text_cols=["product_name"], 
@@ -94,7 +102,7 @@ def transform_products(*, df: DataFrame) -> DataFrame:
     return generate_surrogate_key(df=cleaned, key_columns=["product_id"], sk_column_name="product_key")
 
 def transform_orders(*, df: DataFrame) -> DataFrame:
-    """Clean orders and parse dates."""
+    """Clean orders & parse dates."""
     cleaned = clean_dataset(
         df=df,
         mandatory_cols=["order_id", "customer_id", "product_id"]
@@ -103,21 +111,17 @@ def transform_orders(*, df: DataFrame) -> DataFrame:
     return parse_date_col(df=parsed, date_col="ship_date", date_format="d/M/y")
 
 def filter_orders_by_date(*, df: DataFrame, start_date: str, end_date: str) -> DataFrame:
-    """Filter orders by date range. If dates are empty, return all data."""
+    """Filter orders by date range."""
     if start_date and end_date:
-        logger.info(f"Filtering orders: {start_date} to {end_date}")
+        logger.info(f"Filtering: {start_date} to {end_date}")
         return df.filter(
             (F.col("order_date") >= start_date) & (F.col("order_date") <= end_date)
         )
-    logger.info("No date filter applied — processing all orders.")
+    logger.info("Processing all orders")
     return df
 
 def build_fact_table(*, orders: DataFrame) -> DataFrame:
-    """
-    Build the fact table with surrogate keys.
-    Since surrogate keys are deterministic (MD5 hash), they can be
-    generated directly without joining to dimension tables.
-    """
+    """Build fact table (deterministic SK generation)."""
     enriched = generate_surrogate_key(df=orders, key_columns=["customer_id"], sk_column_name="customer_key")
     enriched = generate_surrogate_key(df=enriched, key_columns=["product_id"], sk_column_name="product_key")
     enriched = enriched.withColumn("profit", F.round(F.col("profit"), 2))
@@ -130,10 +134,7 @@ def build_fact_table(*, orders: DataFrame) -> DataFrame:
     return enriched.select(*[c for c in fact_columns if c in enriched.columns])
 
 def build_enriched_orders(*, fact_df: DataFrame, customers: DataFrame, products: DataFrame) -> DataFrame:
-    """
-    Create denormalized enriched orders by joining fact table with dimensions.
-    Contains: order info, profit (rounded), customer name & country, product category & sub-category.
-    """
+    """Create denormalized view (Fact + Dims)."""
     # Join fact with customers on surrogate key
     enriched = join_dataframes(
         left_df=fact_df,
@@ -165,17 +166,12 @@ def build_enriched_orders(*, fact_df: DataFrame, customers: DataFrame, products:
 # COMMAND ----------
 
 def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFrame, enriched_df: DataFrame):
-    """
-    Write Star Schema tables to Silver layer.
-    - dim_customers & dim_products: SCD Type 2 (historical tracking)
-    - ft_sales_ecommerce_orders: Fact table partitioned by order_date
-    - enriched_orders: Denormalized view for downstream consumption
-    """
+    """Write to Silver (SCD2 & Partition Overwrite)."""
     spark = SparkSession.getActiveSession()
     
     # --- Dim: Customers (SCD Type 2) ---
     if spark.catalog.tableExists(silver_dim_customers_table):
-        logger.info("Applying SCD Type 2 merge for dim_customers...")
+        logger.info("Merging Customers (SCD2)...")
         merge_scd_type2(
             df=cust_df, 
             table_name=silver_dim_customers_table, 
@@ -183,7 +179,7 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
             compare_columns=["customer_name", "country", "city", "state", "region"]
         )
     else:
-        logger.info("Creating dim_customers with SCD Type 2 structure...")
+        logger.info("Creating Customers (SCD2)...")
         cust_df_scd = cust_df \
             .withColumn("effective_date", F.to_date(F.current_timestamp())) \
             .withColumn("end_date", F.lit(None).cast("date")) \
@@ -192,7 +188,7 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
     
     # --- Dim: Products (SCD Type 2) ---
     if spark.catalog.tableExists(silver_dim_products_table):
-        logger.info("Applying SCD Type 2 merge for dim_products...")
+        logger.info("Merging Products (SCD2)...")
         merge_scd_type2(
             df=prod_df, 
             table_name=silver_dim_products_table, 
@@ -200,7 +196,7 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
             compare_columns=["category", "sub_category", "product_name", "price_per_product"]
         )
     else:
-        logger.info("Creating dim_products with SCD Type 2 structure...")
+        logger.info("Creating Products (SCD2)...")
         prod_df_scd = prod_df \
             .withColumn("effective_date", F.to_date(F.current_timestamp())) \
             .withColumn("end_date", F.lit(None).cast("date")) \
@@ -208,7 +204,8 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
         write_data(df=prod_df_scd, mode="overwrite", table_name=silver_dim_products_table)
     
     # --- Fact: Orders (partition overwrite by order_date) ---
-    logger.info("Writing ft_sales_ecommerce_orders (partitioned by order_date)...")
+    # --- Fact: Orders (partition overwrite by order_date) ---
+    logger.info("Writing Fact table (partitioned)...")
     write_data(
         df=fact_df, 
         mode="overwrite", 
@@ -217,7 +214,8 @@ def merge_to_silver(*, cust_df: DataFrame, prod_df: DataFrame, fact_df: DataFram
     )
     
     # --- Enriched Orders (denormalized view, partitioned by order_date) ---
-    logger.info("Writing enriched_orders (partitioned by order_date)...")
+    # --- Enriched Orders (denormalized view, partitioned by order_date) ---
+    logger.info("Writing Enriched Orders (partitioned)...")
     write_data(
         df=enriched_df, 
         mode="overwrite", 
@@ -237,17 +235,17 @@ if __name__ == "__main__":
     start_date = dbutils.widgets.get("start_date").strip()
     end_date = dbutils.widgets.get("end_date").strip()
     
-    logger.info(f"Date range: start='{start_date}', end='{end_date}'")
+    logger.info(f"Date range: {start_date} to {end_date}")
     if not start_date or not end_date:
-        logger.info("No date range specified — processing all data.")
+        logger.info("Full load (no date range)")
     
     try:
         # Read Bronze
-        logger.info("Reading Bronze layer data...")
+        logger.info("Reading Bronze data")
         bronze_cust_raw, bronze_prod_raw, bronze_ord_raw = read_bronze_data(spark_session=spark)
         
         # Standardize
-        logger.info("Standardizing schemas to snake_case...")
+        logger.info("Standardizing schemas")
         bronze_cust = standardize_schema(df=bronze_cust_raw)
         bronze_prod = standardize_schema(df=bronze_prod_raw)
         bronze_ord = standardize_schema(df=bronze_ord_raw)
@@ -258,26 +256,26 @@ if __name__ == "__main__":
             raise DataTransformationError("Order data missing required columns")
         
         # Transform dimensions (with surrogate keys)
-        logger.info("Transforming dimension data with surrogate keys...")
+        logger.info("Transforming dimensions")
         silver_cust = transform_customers(df=bronze_cust)
         silver_prod = transform_products(df=bronze_prod)
         
         # Transform orders and apply date filter
-        logger.info("Transforming order data...")
+        logger.info("Transforming orders")
         silver_ord = transform_orders(df=bronze_ord)
         silver_ord = filter_orders_by_date(df=silver_ord, start_date=start_date, end_date=end_date)
         
 
         
         # Build fact table with surrogate keys
-        logger.info("Building fact table with surrogate keys...")
+        logger.info("Building fact table")
         fact_df = build_fact_table(orders=silver_ord)
         
         # Build enriched orders (denormalized: joins fact + dims)
-        logger.info("Building enriched orders (fact + dim joins)...")
+        logger.info("Building enriched orders")
         enriched_df = build_enriched_orders(fact_df=fact_df, customers=silver_cust, products=silver_prod)
         
-        logger.info("Star Schema enrichment completed successfully")
+        logger.info("Enrichment complete")
         
         # Add audit columns
         silver_cust = add_audit_columns(df=silver_cust)
@@ -289,7 +287,7 @@ if __name__ == "__main__":
         merge_to_silver(cust_df=silver_cust, prod_df=silver_prod, fact_df=fact_df, enriched_df=enriched_df)
         
         # Optimize tables with Z-ORDER
-        logger.info("Optimizing Silver tables...")
+        logger.info("Optimizing tables...")
         
         opt_where = None
         if start_date and end_date:
@@ -306,10 +304,10 @@ if __name__ == "__main__":
             where=opt_where
         )
         
-        logger.info("Silver layer Star Schema completed successfully.")
-        logger.info("SCD Type 2 applied to dim_customers and dim_products.")
-        logger.info("ft_sales_ecommerce_orders partitioned by order_date.")
-        logger.info("enriched_orders denormalized view created.")
+        logger.info("Silver layer complete")
+        logger.info("SCD2 applied")
+        logger.info("Fact table partitioned")
+        logger.info("Enriched view created")
         
     except Exception as e:
         logger.error(f"Error in Silver layer processing: {e}")

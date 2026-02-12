@@ -16,11 +16,7 @@ FORMAT_MAPPINGS = {
 }
 
 def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructType = None, options: dict = None) -> DataFrame:
-    """
-    Ingest Excel files using pyspark.pandas.read_excel.
-    Reads all columns as strings to avoid mixed-type Arrow conversion errors.
-    Spark schema handles type casting if provided.
-    """
+    """Ingest Excel using pyspark.pandas (converts all to string first)."""
     import pyspark.pandas as ps
 
     read_options = {"dtype": str}
@@ -32,9 +28,9 @@ def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructTy
         if "sheet" in options:
             read_options["sheet_name"] = options["sheet"]
 
-    logger.info(f"Reading Excel via pyspark.pandas: {source_path}")
+    logger.info(f"Reading Excel: {source_path}")
     ps_df = ps.read_excel(source_path, **read_options)
-    logger.info(f"Read {len(ps_df)} rows from Excel")
+    logger.info(f"Excel read: {len(ps_df)} rows")
 
     spark_df = ps_df.to_spark()
 
@@ -50,16 +46,7 @@ def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructTy
     return spark_df
 
 def ingest_file(spark: SparkSession, file_format: str, source_path: str, schema: StructType = None, options: dict = None) -> DataFrame:
-    """
-    Generic function to ingest data from a file source.
-    
-    Args:
-        spark: SparkSession instance.
-        file_format: Format alias (e.g., 'excel', 'csv') or full format string.
-        source_path: Path to the source file.
-        schema: Optional StructType schema.
-        options: Optional dictionary of read options.
-    """
+    """Read data file into DataFrame."""
     # Use pandas for Excel files (spark-excel JAR not available on serverless compute)
     if file_format.lower() == "excel":
         return _ingest_excel_pandas(spark=spark, source_path=source_path, schema=schema, options=options)
@@ -76,6 +63,6 @@ def ingest_file(spark: SparkSession, file_format: str, source_path: str, schema:
     try:
         return reader.load(source_path)
     except Exception as e:
-        logger.error(f"Error ingesting {file_format} from {source_path}: {e}")
+        logger.error(f"Ingest failed: {source_path} ({file_format}) -> {e}")
         raise e
 
