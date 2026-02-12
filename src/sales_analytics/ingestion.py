@@ -17,11 +17,11 @@ FORMAT_MAPPINGS = {
 
 def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructType = None, options: dict = None) -> DataFrame:
     """
-    Ingest Excel files using pandas + openpyxl.
+    Ingest Excel files using pyspark.pandas.read_excel.
     Reads all columns as strings to avoid mixed-type Arrow conversion errors.
     Spark schema handles type casting if provided.
     """
-    import pandas as pd
+    import pyspark.pandas as ps
 
     read_options = {"dtype": str}
     if options:
@@ -32,14 +32,19 @@ def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructTy
         if "sheet" in options:
             read_options["sheet_name"] = options["sheet"]
 
-    logger.info(f"Reading Excel via pandas: {source_path}")
-    pandas_df = pd.read_excel(source_path, **read_options)
-    logger.info(f"Read {len(pandas_df)} rows from Excel via pandas")
+    logger.info(f"Reading Excel via pyspark.pandas: {source_path}")
+    ps_df = ps.read_excel(source_path, **read_options)
+    logger.info(f"Read {len(ps_df)} rows from Excel")
+
+    spark_df = ps_df.to_spark()
 
     if schema:
-        return spark.createDataFrame(data=pandas_df, schema=schema)
-    else:
-        return spark.createDataFrame(data=pandas_df)
+        from pyspark.sql.functions import col as spark_col
+        for field in schema.fields:
+            if field.name in spark_df.columns:
+                spark_df = spark_df.withColumn(field.name, spark_col(field.name).cast(field.dataType))
+
+    return spark_df
 
 def ingest_file(spark: SparkSession, file_format: str, source_path: str, schema: StructType = None, options: dict = None) -> DataFrame:
     """
