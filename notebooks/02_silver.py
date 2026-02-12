@@ -272,10 +272,6 @@ if __name__ == "__main__":
         logger.info("Building fact table")
         fact_df_clean = build_fact_table(orders=silver_ord_clean)
         
-        # Cache intermediate dfs (clean versions) to reuse
-        silver_cust_clean.cache()
-        silver_prod_clean.cache()
-        fact_df_clean.cache()
         
         # Build enriched orders (denormalized: joins fact + dims)
         logger.info("Building enriched orders")
@@ -319,11 +315,6 @@ if __name__ == "__main__":
         logger.info("SCD2 applied")
         logger.info("Fact table partitioned")
         logger.info("Enriched view created")
-        
-        # Unpersist cached DataFrames
-        silver_cust_clean.unpersist()
-        silver_prod_clean.unpersist()
-        fact_df_clean.unpersist()
         
     except Exception as e:
         logger.error(f"Error in Silver layer processing: {e}")
