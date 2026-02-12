@@ -19,6 +19,7 @@ from sales_analytics.utils import get_spark_session, read_data, write_data, merg
 from sales_analytics.aggregation import create_aggregates
 from sales_analytics.exceptions import DataWriteError
 from sales_analytics.validation import validate_data_range
+from sales_analytics.transformation import add_audit_columns
 
 # Configuration
 silver_enriched_orders_table = "sales.silver.sales_ecommerce_enriched_orders"
@@ -115,7 +116,7 @@ if __name__ == "__main__":
         # Read
         logger.info("Reading Silver enriched data...")
         enriched_df = read_silver_data(spark_session=spark)
-        logger.info(f"Loaded {enriched_df.count()} enriched order records")
+        logger.info("Loaded enriched order records from Silver layer")
         
         # Calculate aggregates
         logger.info("Calculating profit aggregates...")
@@ -123,9 +124,11 @@ if __name__ == "__main__":
         
         # Validate aggregates
         logger.info("Validating aggregate data...")
-        agg_count = gold_aggregates.count()
-        logger.info(f"Generated {agg_count} aggregate records")
+        logger.info("Aggregate records generated successfully")
         
+        # Add audit columns
+        gold_aggregates = add_audit_columns(df=gold_aggregates)
+
         # Write with incremental merge
         merge_to_gold(df=gold_aggregates)
         

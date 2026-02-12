@@ -24,6 +24,7 @@ def get_spark_session(app_name: str = "DatabricksApp") -> SparkSession:
         .config("spark.jars.packages", "com.crealytics:spark-excel_2.13:3.5.1_0.20.4") \
         .config("spark.sql.adaptive.enabled", "true") \
         .config("spark.sql.adaptive.skewJoin.enabled", "true") \
+        .config("spark.sql.sources.partitionOverwriteMode", "dynamic") \
         .getOrCreate()
 
 def read_data(spark: SparkSession, file_format: str = "delta", path: str = None, table_name: str = None, schema=None, options: dict = None) -> DataFrame:
@@ -56,7 +57,7 @@ def read_data(spark: SparkSession, file_format: str = "delta", path: str = None,
         
     try:
         df = reader.load(path)
-        logger.info(f"Successfully read {df.count()} rows from {path}")
+        logger.info(f"Successfully read data from {path}")
         return df
     except Exception as e:
         logger.error(f"Error reading data from {path}: {e}")
@@ -74,8 +75,7 @@ def write_data(df: DataFrame, file_format: str = "delta", mode: str = "append", 
         table_name: Managed table name to write to
         partition_by: Optional list of columns to partition by
     """
-    row_count = df.count()
-    logger.info(f"Writing {row_count} rows (mode: {mode})")
+    logger.info(f"Writing data (mode: {mode})")
     
     writer = df.write.format(file_format).mode(mode)
     
@@ -107,7 +107,7 @@ def merge_data(df: DataFrame, table_name: str, merge_keys: list, update_columns:
         merge_keys: List of columns to use for matching (primary/business keys)
         update_columns: Optional list of columns to update. If None, updates all columns.
     """
-    logger.info(f"Merging {df.count()} rows into {table_name} using keys: {merge_keys}")
+    logger.info(f"Merging data into {table_name} using keys: {merge_keys}")
     
     # Create temp view for merge
     df.createOrReplaceTempView("merge_source")
@@ -231,10 +231,11 @@ def merge_scd_type2(df: DataFrame, table_name: str, business_keys: list, compare
         
         changed_df = spark.sql(changed_records_sql)
         
-        if changed_df.count() > 0:
+        changed_count = changed_df.count()
+        if changed_count > 0:
             # Insert new current versions
             changed_df.write.format("delta").mode("append").saveAsTable(table_name)
-            logger.info(f"Inserted {changed_df.count()} new versions for changed records")
+            logger.info(f"Inserted {changed_count} new versions for changed records")
         
         logger.info(f"Successfully applied SCD Type 2 to {table_name}")
         

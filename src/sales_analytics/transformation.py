@@ -1,5 +1,5 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date
+from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, current_timestamp
 
 def clean_text(df: DataFrame, column_name: str) -> DataFrame:
     """
@@ -23,6 +23,19 @@ def to_snake_case(df: DataFrame) -> DataFrame:
     for col_name in df.columns:
         new_name = col_name.strip().lower().replace(' ', '_').replace('-', '_').replace('/', '_')
         df = df.withColumnRenamed(col_name, new_name)
+    return df
+
+def add_audit_columns(df: DataFrame, source_file: str = None) -> DataFrame:
+    """
+    Adds audit columns to a DataFrame for data lineage tracking.
+    
+    Columns added:
+        - created_at: Timestamp when the record was ingested.
+        - source_file: Path of the source file (only if provided).
+    """
+    df = df.withColumn("created_at", current_timestamp())
+    if source_file:
+        df = df.withColumn("source_file", lit(source_file))
     return df
 
 def clean_dataset(

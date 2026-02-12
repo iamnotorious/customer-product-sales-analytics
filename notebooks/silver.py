@@ -29,7 +29,8 @@ from sales_analytics.transformation import (
     join_dataframes, 
     calculate_metric,
     parse_date_col,
-    add_year_col
+    add_year_col,
+    add_audit_columns
 )
 
 # Configuration Rules
@@ -205,8 +206,13 @@ if __name__ == "__main__":
         enriched_df = enrich_order_data(orders=silver_ord_parsed, customers=silver_cust, products=silver_prod)
         
         # Final validation
-        logger.info(f"Enriched dataset created with {enriched_df.count()} records")
+        logger.info("Enriched dataset created successfully")
         
+        # Add audit columns
+        silver_cust = add_audit_columns(df=silver_cust)
+        silver_prod = add_audit_columns(df=silver_prod)
+        enriched_df = add_audit_columns(df=enriched_df)
+
         # Write with SCD Type 2 for dimensions and partitioned orders
         merge_to_silver(cust_df=silver_cust, prod_df=silver_prod, enriched_df=enriched_df)
         

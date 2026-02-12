@@ -22,7 +22,7 @@ from sales_analytics.utils import get_spark_session, write_data, merge_data
 from sales_analytics.ingestion import ingest_file
 from sales_analytics.exceptions import DataIngestionError, DataWriteError
 from sales_analytics.validation import generate_data_quality_report, check_duplicates
-from sales_analytics.transformation import to_snake_case
+from sales_analytics.transformation import to_snake_case, add_audit_columns
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,20 @@ bronze_products_table = "sales.bronze.sales_ecommerce_products"
 bronze_orders_table = "sales.bronze.sales_ecommerce_orders"
 
 # Schemas
+customer_schema = StructType([
+    StructField("Customer ID", StringType(), True),
+    StructField("Customer Name", StringType(), True),
+    StructField("email", StringType(), True),
+    StructField("phone", StringType(), True),
+    StructField("address", StringType(), True),
+    StructField("Segment", StringType(), True),
+    StructField("Country", StringType(), True),
+    StructField("City", StringType(), True),
+    StructField("State", StringType(), True),
+    StructField("Postal Code", IntegerType(), True),
+    StructField("Region", StringType(), True)
+])
+
 product_schema = StructType([
     StructField("Product ID", StringType(), True),
     StructField("Category", StringType(), True),
@@ -61,17 +75,17 @@ order_schema = StructType([
     StructField("Profit", DoubleType(), True)
 ])
 
-def ingest_customers_data(*, spark_session: SparkSession, source_path: str) -> DataFrame:
+def ingest_customers_data(*, spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
     """Ingest customer data from Excel source."""
     try:
         df = ingest_file(
             spark=spark_session, 
             file_format="excel", 
-
             source_path=source_path,
-            options={"header": "true", "inferSchema": "true"}
+            schema=schema,
+            options={"header": "true"}
         )
-        logger.info(f"Successfully ingested {df.count()} customer records")
+        logger.info("Successfully ingested customer records")
         return df
     except Exception as e:
         logger.error(f"Error ingesting customers: {e}")
@@ -88,7 +102,7 @@ def ingest_products_data(*, spark_session: SparkSession, source_path: str, schem
             schema=schema,
             options={"header": "true"}
         )
-        logger.info(f"Successfully ingested {df.count()} product records")
+        logger.info("Successfully ingested product records")
         return df
     except Exception as e:
         logger.error(f"Error ingesting products: {e}")
@@ -105,7 +119,7 @@ def ingest_orders_data(*, spark_session: SparkSession, source_path: str, schema:
             schema=schema,
             options={"multiLine": "true"}
         )
-        logger.info(f"Successfully ingested {df.count()} order records")
+        logger.info("Successfully ingested order records")
         return df
     except Exception as e:
         logger.error(f"Error ingesting orders: {e}")
@@ -157,22 +171,25 @@ if __name__ == "__main__":
     spark = get_spark_session(app_name="SALES_ECOMMERCE_ANALYTICS_INGESTION_JOB")
 
     # 1. Customers
-    customers_df = ingest_customers_data(spark_session=spark, source_path=customer_source_path)
+    customers_df = ingest_customers_data(spark_session=spark, source_path=customer_source_path, schema=customer_schema)
     customers_df = to_snake_case(df=customers_df)
+    customers_df = add_audit_columns(df=customers_df, source_file=customer_source_path)
     validate_bronze_data(df=customers_df, name="Customers", key_columns=["customer_id"])
     merge_to_bronze(df=customers_df, table_name=bronze_customers_table, merge_keys=["customer_id"])
 
     # 2. Products
     products_df = ingest_products_data(spark_session=spark, source_path=product_source_path, schema=product_schema)
     products_df = to_snake_case(df=products_df)
+    products_df = add_audit_columns(df=products_df, source_file=product_source_path)
     validate_bronze_data(df=products_df, name="Products", key_columns=["product_id"])
     merge_to_bronze(df=products_df, table_name=bronze_products_table, merge_keys=["product_id"])
 
-    # 3. Orders
+    # 3. Orders (fact table - overwrite partitions by order_date)
     orders_df = ingest_orders_data(spark_session=spark, source_path=order_source_path, schema=order_schema)
     orders_df = to_snake_case(df=orders_df)
+    orders_df = add_audit_columns(df=orders_df, source_file=order_source_path)
     validate_bronze_data(df=orders_df, name="Orders", key_columns=["order_id", "row_id"])
-    merge_to_bronze(df=orders_df, table_name=bronze_orders_table, merge_keys=["order_id", "row_id"])
+    write_data(df=orders_df, mode="overwrite", table_name=bronze_orders_table, partition_by=["order_date"])
 
     logger.info("Bronze layer ingestion completed successfully. All data quality checks passed.")
     logger.info("Incremental merge strategy applied to all bronze tables.")
