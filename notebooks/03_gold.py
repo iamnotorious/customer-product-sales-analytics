@@ -54,46 +54,6 @@ def merge_to_gold(*, df: DataFrame):
         partition_by=["order_year"]
     )
 
-def perform_analysis_output(*, spark_session: SparkSession):
-    """Output analysis via SQL."""
-    logger.info("Generating Analysis")
-    
-    # 1. Profit by Year
-    logger.info("--- Profit/Year ---")
-    spark_session.sql(f"""
-        SELECT order_year, round(sum(total_profit), 2) as annual_profit 
-        FROM {gold_profit_aggregates_table} 
-        GROUP BY order_year 
-        ORDER BY order_year
-    """).show()
-    
-    # 2. Profit by Year + Product Category
-    logger.info("--- Profit/Year + Category ---")
-    spark_session.sql(f"""
-        SELECT order_year, category, round(sum(total_profit), 2) as category_profit 
-        FROM {gold_profit_aggregates_table} 
-        GROUP BY order_year, category 
-        ORDER BY order_year, category
-    """).show()
-    
-    # 3. Profit by Customer
-    logger.info("--- Profit/Customer ---")
-    spark_session.sql(f"""
-        SELECT customer_name, round(sum(total_profit), 2) as customer_profit 
-        FROM {gold_profit_aggregates_table} 
-        GROUP BY customer_name 
-        ORDER BY customer_profit DESC
-    """).show()
-    
-    # 4. Profit by Customer + Year
-    logger.info("--- Profit/Customer + Year ---")
-    spark_session.sql(f"""
-        SELECT customer_name, order_year, round(sum(total_profit), 2) as customer_annual_profit 
-        FROM {gold_profit_aggregates_table} 
-        GROUP BY customer_name, order_year 
-        ORDER BY customer_name, order_year
-    """).show()
-
 # Execution
 
 # COMMAND ----------
@@ -109,10 +69,8 @@ if __name__ == "__main__":
         logger.info("Silver data loaded")
         
         # Calculate aggregates
-        # Calculate aggregates
         logger.info("Aggregating profit")
         gold_aggregates = calculate_profit_aggregates(df=enriched_df)
-
         
         # Add audit columns
         gold_aggregates = add_audit_columns(df=gold_aggregates)
@@ -124,15 +82,50 @@ if __name__ == "__main__":
         logger.info("Optimizing Gold")
         optimize_table(table_name=gold_profit_aggregates_table, zorder_columns=["customer_name", "category"])
         
-        # Perform Analysis
-        logger.info("=" * 60)
-        logger.info("ANALYSIS OUTPUTS")
-        logger.info("=" * 60)
-        perform_analysis_output(spark_session=spark)
-
         logger.info("Gold layer complete")
         logger.info("Partition overwrite applied")
         
     except Exception as e:
         logger.error(f"Error in Gold layer processing: {e}")
         raise
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Analysis
+
+# COMMAND ----------
+
+# DBTITLE 1,Profit by Year
+# MAGIC %sql
+# MAGIC SELECT order_year, round(sum(total_profit), 2) as annual_profit 
+# MAGIC FROM sales.gold.sales_ecommerce_profit_aggregates
+# MAGIC GROUP BY order_year 
+# MAGIC ORDER BY order_year
+
+# COMMAND ----------
+
+# DBTITLE 1,Profit by Year + Category
+# MAGIC %sql
+# MAGIC SELECT order_year, category, round(sum(total_profit), 2) as category_profit 
+# MAGIC FROM sales.gold.sales_ecommerce_profit_aggregates
+# MAGIC GROUP BY order_year, category 
+# MAGIC ORDER BY order_year, category
+
+# COMMAND ----------
+
+# DBTITLE 1,Profit by Customer
+# MAGIC %sql
+# MAGIC SELECT customer_name, round(sum(total_profit), 2) as customer_profit 
+# MAGIC FROM sales.gold.sales_ecommerce_profit_aggregates
+# MAGIC GROUP BY customer_name 
+# MAGIC ORDER BY customer_profit DESC
+
+# COMMAND ----------
+
+# DBTITLE 1,Profit by Customer + Year
+# MAGIC %sql
+# MAGIC SELECT customer_name, order_year, round(sum(total_profit), 2) as customer_annual_profit 
+# MAGIC FROM sales.gold.sales_ecommerce_profit_aggregates
+# MAGIC GROUP BY customer_name, order_year 
+# MAGIC ORDER BY customer_name, order_year
