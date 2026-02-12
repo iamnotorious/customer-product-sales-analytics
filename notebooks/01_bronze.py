@@ -30,7 +30,7 @@ from sales_analytics.utils import get_spark_session, write_data, merge_data
 from sales_analytics.ingestion import ingest_file
 from sales_analytics.exceptions import DataIngestionError, DataWriteError
 from sales_analytics.validation import generate_data_quality_report, check_duplicates
-from sales_analytics.transformation import to_snake_case, add_audit_columns
+from sales_analytics.transformation import to_snake_case, add_audit_columns, deduplicate
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +181,7 @@ if __name__ == "__main__":
     # 1. Customers
     customers_df = ingest_customers_data(spark_session=spark, source_path=customer_source_path, schema=customer_schema)
     customers_df = to_snake_case(df=customers_df)
+    customers_df = deduplicate(df=customers_df, key_columns=["customer_id"])
     customers_df = add_audit_columns(df=customers_df, source_file=customer_source_path)
     validate_bronze_data(df=customers_df, name="Customers", key_columns=["customer_id"])
     merge_to_bronze(df=customers_df, table_name=bronze_customers_table, merge_keys=["customer_id"])
@@ -188,6 +189,7 @@ if __name__ == "__main__":
     # 2. Products
     products_df = ingest_products_data(spark_session=spark, source_path=product_source_path, schema=product_schema)
     products_df = to_snake_case(df=products_df)
+    products_df = deduplicate(df=products_df, key_columns=["product_id"])
     products_df = add_audit_columns(df=products_df, source_file=product_source_path)
     validate_bronze_data(df=products_df, name="Products", key_columns=["product_id"])
     merge_to_bronze(df=products_df, table_name=bronze_products_table, merge_keys=["product_id"])
@@ -195,6 +197,7 @@ if __name__ == "__main__":
     # 3. Orders (fact table - overwrite partitions by order_date)
     orders_df = ingest_orders_data(spark_session=spark, source_path=order_source_path, schema=order_schema)
     orders_df = to_snake_case(df=orders_df)
+    orders_df = deduplicate(df=orders_df, key_columns=["order_id", "row_id"])
     orders_df = add_audit_columns(df=orders_df, source_file=order_source_path)
     validate_bronze_data(df=orders_df, name="Orders", key_columns=["order_id", "row_id"])
     write_data(df=orders_df, mode="overwrite", table_name=bronze_orders_table, partition_by=["order_date"])

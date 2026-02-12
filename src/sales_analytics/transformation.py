@@ -38,6 +38,15 @@ def add_audit_columns(df: DataFrame, source_file: str = None) -> DataFrame:
         df = df.withColumn("source_file", lit(source_file))
     return df
 
+def deduplicate(df: DataFrame, key_columns: list = None) -> DataFrame:
+    """
+    Removes duplicate rows based on key columns.
+    If key_columns is not provided, deduplicates on all columns.
+    """
+    if key_columns:
+        return df.dropDuplicates(key_columns)
+    return df.dropDuplicates()
+
 def clean_dataset(
     df: DataFrame, 
     clean_text_cols: list = None, 
