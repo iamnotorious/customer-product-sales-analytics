@@ -17,18 +17,35 @@ def clean_text(df: DataFrame, column_name: str) -> DataFrame:
     df = df.withColumn(column_name, regexp_replace(col(column_name), "11", "ll"))
     df = df.withColumn(column_name, regexp_replace(col(column_name), "55", "ss"))
     
-    # Step 1: Remove sequences of 2 or more digits Entirely
-    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}', ' '))
+    # Step 1: Remove sequences of 2 or more digits with Context-Awareness
+    # Order matters to handle spaces correctly.
+    
+    # Case A: Digits surrounded by spaces -> Remove digits AND spaces (Merge names)
+    # e.g. "Tho 12 mas" -> "Thomas"
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s+\d{2,}\s+', ''))
+    
+    # Case B: Digits preceded by space -> Remove digits AND preceding space (Merge names)
+    # e.g. "Bi 876ll" -> "Bill"
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s+\d{2,}', ''))
+    
+    # Case C: Digits followed by space -> Remove digits, KEEP 1 space (Separate names)
+    # e.g. "Gary567 Hansen" -> "Gary Hansen"
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}\s+', ' '))
+    
+    # Case D: Digits embedded/isolated -> Remove digits entirely
+    # e.g. "Fra9876nk" -> "Frank", "5678Shirley" -> "Shirley"
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}', ''))
     
     # Step 2: Map isolated single digits (leetspeak)
     df = df.withColumn(column_name, regexp_replace(col(column_name), "1", "l"))
     df = df.withColumn(column_name, regexp_replace(col(column_name), "0", "o"))
     df = df.withColumn(column_name, regexp_replace(col(column_name), "5", "s"))
     
-    # Rule 1: Replace digits and special characters with a space
+    # Rule 1: Replace SPECIAL CHARACTERS (non-alphanumeric) with a space
+    # excluding single quotes
     df = df.withColumn(column_name, regexp_replace(col(column_name), r'[^\p{L}\s\']', ' '))
     
-    # Rule 2: Heuristic for Healing vs Separating
+    # Rule 2: Heuristic for Healing vs Separating (Post-processing)
     # - If gap is large (>= 3 spaces), assume it was noise -> Merge (Empty String)
     df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s{3,}', ''))
     

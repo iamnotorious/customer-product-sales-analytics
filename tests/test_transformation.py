@@ -84,7 +84,8 @@ class TestCleanDataset:
             ("Jocasta Rupert",),             # Normal name (No Change)
             ("B         ecky Martin",),      # Healed (Gap > 2)
             ("''Becky Pak",),                # Leading punctuation removed
-            ("[]-=;''Becky Pak",)            # Complex leading junk removed
+            ("[]-=;''Becky Pak",),           # Complex leading junk removed
+            ("Gary567 Hansen",)              # Separated (digits followed by space)
         ]
         schema = StructType([StructField("name", StringType(), True)])
         df = spark.createDataFrame(data, schema)
@@ -110,6 +111,7 @@ class TestCleanDataset:
         assert rows[15]["name"] == "Becky Martin"
         assert rows[16]["name"] == "Becky Pak"
         assert rows[17]["name"] == "Becky Pak"
+        assert rows[18]["name"] == "Gary Hansen"
     
     def test_handle_nulls_fills_values(self, spark):
         """Test null value filling."""
