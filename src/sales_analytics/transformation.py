@@ -1,45 +1,46 @@
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, current_timestamp, broadcast
 
-def clean_text(df: DataFrame, column_name: str, aggressive_name_clean: bool = False) -> DataFrame:
+def clean_text(df: DataFrame, column_name: str) -> DataFrame:
     """
-    Cleans text based on specified rules.
-    If aggressive_name_clean is True:
-    1. Replaces digits and special characters with spaces.
-    2. Replaces multiple spaces (2 or more) with an empty string.
-    This preserves single spaces (like between first and last name) 
-    but collapses sequences and removes numeric/symbolic noise.
+    Cleans text based on refined name cleaning rules.
+    1. Normalizes leetspeak (e.g. 1l->ll, 1->l).
+    2. Removes numeric sequences (2+ digits).
+    3. Replaces special characters/digits with spaces.
+    4. Heals fragmented names (merges gaps > 2 spaces).
+    5. Normalizes separators (collapses 1-2 spaces to single space).
     """
     from pyspark.sql.functions import trim
     
-    if aggressive_name_clean:
-        # Step 0: Handle combined leetspeak (1l -> ll, 55 -> ss, 11 -> ll)
-        # We handle specific multi-digit maps BEFORE removing generic multi-digits
-        df = df.withColumn(column_name, regexp_replace(col(column_name), "1l", "ll"))
-        df = df.withColumn(column_name, regexp_replace(col(column_name), "11", "ll"))
-        df = df.withColumn(column_name, regexp_replace(col(column_name), "55", "ss"))
-        
-        # Step 1: Remove sequences of 2 or more digits Entirely
-        # This will remove "12", "876", "0009", but "55" and "1l" are already saved
-        df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}', ' '))
-        
-        # Step 2: Map isolated single digits (leetspeak)
-        df = df.withColumn(column_name, regexp_replace(col(column_name), "1", "l"))
-        df = df.withColumn(column_name, regexp_replace(col(column_name), "0", "o"))
-        df = df.withColumn(column_name, regexp_replace(col(column_name), "5", "s"))
-        
-        # Rule 1: Replace digits and special characters with a space
-        # [^\p{L}\s\'] means "Any character that is NOT a Unicode letter, space, or apostrophe"
-        df = df.withColumn(column_name, regexp_replace(col(column_name), r'[^\p{L}\s\']', ' '))
-        
-        # Rule 2: Replace multiple spaces (2 or more) with an empty string
-        # This heals names like "Ad   am" -> "Adam"
-        df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s{2,}', ''))
-        
-        return df.withColumn(column_name, trim(col(column_name)))
+    # Step 0: Handle combined leetspeak (1l -> ll, 55 -> ss, 11 -> ll)
+    df = df.withColumn(column_name, regexp_replace(col(column_name), "1l", "ll"))
+    df = df.withColumn(column_name, regexp_replace(col(column_name), "11", "ll"))
+    df = df.withColumn(column_name, regexp_replace(col(column_name), "55", "ss"))
     
-    # Default: Remove special characters, keep alphanumeric and spaces
-    return df.withColumn(column_name, trim(regexp_replace(col(column_name), r'[^a-zA-Z0-9\s]', '')))
+    # Step 1: Remove sequences of 2 or more digits Entirely
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}', ' '))
+    
+    # Step 2: Map isolated single digits (leetspeak)
+    df = df.withColumn(column_name, regexp_replace(col(column_name), "1", "l"))
+    df = df.withColumn(column_name, regexp_replace(col(column_name), "0", "o"))
+    df = df.withColumn(column_name, regexp_replace(col(column_name), "5", "s"))
+    
+    # Rule 1: Replace digits and special characters with a space
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r'[^\p{L}\s\']', ' '))
+    
+    # Rule 2: Heuristic for Healing vs Separating
+    # - If gap is large (>= 3 spaces), assume it was noise -> Merge (Empty String)
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s{3,}', ''))
+    
+    # - If gap is small (1-2 spaces), assume it is a separator -> Normalize (Single Space)
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s+', ' '))
+    
+    # Final Polish: Trim whitespace AND specific leading/trailing punctuation/symbols
+    # This handles "''Becky Pak" -> "Becky Pak" while keeping "O'Rourke"
+    # (^[\W_]+) matches non-word chars at start, ([\W_]+$) matches at end.
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r'(^[\W_]+)|([\W_]+$)', ''))
+    
+    return df.withColumn(column_name, trim(col(column_name)))
 
 def handle_nulls(df: DataFrame, columns: list, default_value: str = "N/A") -> DataFrame:
     """
@@ -107,12 +108,12 @@ def clean_dataset(
     # 1. Aggressive name cleaning (follow specific user rules)
     if clean_names_cols:
         for col_name in clean_names_cols:
-            cleaned_df = clean_text(cleaned_df, col_name, aggressive_name_clean=True)
+            cleaned_df = clean_text(cleaned_df, col_name)
 
     # 2. Standard text cleaning (remove symbols, keep alphanumeric)
     if clean_text_cols:
         for col_name in clean_text_cols:
-            cleaned_df = clean_text(cleaned_df, col_name, aggressive_name_clean=False)
+            cleaned_df = clean_text(cleaned_df, col_name)
             
     # 3. Handle Nulls
     if handle_null_cols:
@@ -148,5 +149,3 @@ def parse_date_col(df: DataFrame, date_col: str, date_format: str, output_col: s
     """
     target_col = output_col if output_col else date_col
     return df.withColumn(target_col, to_date(col(date_col), date_format))
-
-

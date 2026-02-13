@@ -52,21 +52,39 @@ class TestCleanDataset:
         result = clean_dataset(df, clean_text_cols=["name"])
         rows = result.collect()
         
+        # New logic replaces symbols with spaces, then heals/normalizes.
+        # "Product___Name!!!" -> "Product   Name   " -> "ProductName" (Healed >= 3 spaces)
         assert "!" not in rows[0]["name"]
-        assert rows[1]["name"] == "CleanText"  # Should be trimmed and special char removed
+        assert rows[0]["name"] == "ProductName"
+        
+        # "  Clean_Text  " -> "Clean Text" (1 space separator)
+        # Old simple cleaning removed '_', new logic replaces with space.
+        assert rows[1]["name"] == "Clean Text"
+        
+        # "Test@#$Value" -> "Test   Value" -> "TestValue" (Healed >= 3 spaces)
         assert "@" not in rows[2]["name"]
+        assert rows[2]["name"] == "TestValue"
     def test_clean_text_removes_digits_for_names(self, spark):
         """Test: Full cleaning logic across difficult raw data cases."""
         data = [
-            ("Bi 8761l Shonely",),           # 1l -> ll, 876 -> space -> healed
+            ("Bi 8761l Shonely",),           # Healed (Gap > 2)
+            ("Shahi  Hopkins",),             # Separated (Gap <= 2)
             ("Ji11 Stevenson",),             # 11 -> ll
-            ("Fra9876nk Gasti  ;.,.,neau",), # 9876 -> space, ;.,. -> space -> healed
-            ("Tam&^*ara Willing___)ham",),   # non-letters -> space -> healed
-            ("Maribeth 5chnelling",),        # 5 -> s
-            ("Ad.       ..am Hart",),        # . -> space -> healed
+            ("Fra9876nk Gasti  ;.,.,neau",), # Healed (Gap > 2)
+            ("Tam&^*ara Willing___)ham",),   # Healed (Gap > 2)
+            ("Ad.       ..am Hart",),        # Healed (Gap > 2)
             ("Peter Bühler",),               # Unicode preserved
             ("Mary O'Rourke",),              # Apostrophe preserved
-            ("   _Mike Vitt 12313orini",)    # 12313 removed
+            ("   _Mike Vitt 12313orini",),   # 12313 removed
+            ("Maribeth 5chnelling",),        # 5 -> s
+            ("Mitch Willin0009gham",),       # 0009 removed -> Willingham
+            ("Helen Wa55erman",),            # 55 -> ss
+            ("Tho   12 mas Boland",),        # 12 removed -> Thomas
+            ("N0ra Paige",),                 # 0 -> o
+            ("Jocasta Rupert",),             # Normal name (No Change)
+            ("B         ecky Martin",),      # Healed (Gap > 2)
+            ("''Becky Pak",),                # Leading punctuation removed
+            ("[]-=;''Becky Pak",)            # Complex leading junk removed
         ]
         schema = StructType([StructField("name", StringType(), True)])
         df = spark.createDataFrame(data, schema)
@@ -75,20 +93,23 @@ class TestCleanDataset:
         rows = result.collect()
         
         assert rows[0]["name"] == "Bill Shonely"
-        assert rows[1]["name"] == "Jill Stevenson"    # 11 -> ll
-        assert rows[2]["name"] == "Frank Gastineau"   # Healed fragmented names
-        assert rows[3]["name"] == "Tamara Willingham" # Underscores/symbols healed
-        assert rows[4]["name"] == "Maribeth Schnelling" # 5 -> S (case insensitive logic handles S/s)
-        # Note: 5 -> s, so 5chnelling -> schnelling. Wait, Maribeth 5chnelling -> Maribeth schnelling
-        # Let's check case. Clean text doesn't capitalize.
-        # Ideally, we'd want InitCap, but requirement is cleaning.
-        # "Maribeth schnelling" is acceptable for "remove digits".
-        # However, let's see if 5 -> s matches expectations.
-        
-        assert rows[5]["name"] == "Adam Hart"
+        assert rows[1]["name"] == "Shahi Hopkins"     # Kept separated
+        assert rows[2]["name"] == "Jill Stevenson"    # 11 -> ll
+        assert rows[3]["name"] == "Frank Gastineau"   # Healed
+        assert rows[4]["name"] == "Tamara Willingham" # Healed
+        assert rows[5]["name"] == "Adam Hart"         # Healed
         assert rows[6]["name"] == "Peter Bühler"
         assert rows[7]["name"] == "Mary O'Rourke"
         assert rows[8]["name"] == "Mike Vittorini"
+        assert rows[9]["name"] == "Maribeth schnelling" # 5->s (lowercase 's' is expected behavior)
+        assert rows[10]["name"] == "Mitch Willingham"
+        assert rows[11]["name"] == "Helen Wasserman"
+        assert rows[12]["name"] == "Thomas Boland"
+        assert rows[13]["name"] == "Nora Paige"
+        assert rows[14]["name"] == "Jocasta Rupert"
+        assert rows[15]["name"] == "Becky Martin"
+        assert rows[16]["name"] == "Becky Pak"
+        assert rows[17]["name"] == "Becky Pak"
     
     def test_handle_nulls_fills_values(self, spark):
         """Test null value filling."""
