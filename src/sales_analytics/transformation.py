@@ -61,7 +61,9 @@ def clean_names(df: DataFrame, column_name: str, apply_title_case: bool = False)
         # "Dan els" -> "Danels" (lowercase + 1-2 char fragment at end)
         (r'([a-z])\s+([a-z]{1,2})\b', '$1$2'),
         # "Kat rina" -> "Katrina" (short capitalized word + lowercase fragment)
-        (r'\b([A-Z][a-z]{1,2})\s+([a-z]+)', '$1$2')
+        (r'\b([A-Z][a-z]{1,2})\s+([a-z]+)', '$1$2'),
+        # Fix for N/A becoming Na
+        (r'\bNa\b', 'N/A')
     ]
     for pattern, replacement in patterns:
         df = df.withColumn(column_name, regexp_replace(col(column_name), pattern, replacement))
