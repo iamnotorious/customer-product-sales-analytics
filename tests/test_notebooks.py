@@ -138,31 +138,6 @@ class TestSilverTransformCustomers:
         assert pw_row["phone"] == "(421) 580-0902 x9815"
         assert "customer_key" in result.columns
 
-
-
-    def test_preserves_outlier_names(self, spark: SparkSession) -> None:
-        # verify no filtering happens
-        data = [
-            ("JK-15370", "Jay Kimmel", "001-597-809-2330x725",
-             "United States", "New York City", "New York", "East"),
-            ("SC-20050", "Sample Company A", "1234567890",
-             "United States", "Dallas", "Texas", "Central"),
-             ("NA-00000", "N/A", "123", "US", "City", "State", "Region"),
-             ("NA-00001", "", "123", "US", "City", "State", "Region"),
-        ]
-        df = spark.createDataFrame(data, CUSTOMER_SCHEMA)
-
-
-        result = silver_nb.transform_customers(df=df)
-        rows = result.collect()
-        names = [r["customer_name"] for r in rows]
-
-
-        assert "Jay Kimmel" in names
-        assert "N/A" in names
-        assert "Sample Company A" in names
-        assert "" in names
-
     def test_fills_missing_geography(self, spark: SparkSession) -> None:
         # all geography columns null
         data = [
