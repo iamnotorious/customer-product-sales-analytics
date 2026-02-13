@@ -46,8 +46,11 @@ from sales_analytics.utils import get_spark_session, write_data_to_table, merge_
 
 from sales_analytics.validation import check_duplicates
 from sales_analytics.transformation import (
-    to_snake_case, 
-    clean_dataset, 
+    to_snake_case,
+    clean_customer_names,
+    clean_customer_phones,
+    fill_missing_values,
+    deduplicate,
     join_dataframes,
     parse_date_col,
     add_audit_columns,
@@ -83,36 +86,33 @@ def standardize_schema(*, df: DataFrame) -> DataFrame:
 
 def transform_customers(*, df: DataFrame) -> DataFrame:
     """Clean customers & add surrogate key."""
-    cleaned = clean_dataset(
-        df=df, 
-        clean_names_cols=["customer_name"],
-        handle_null_cols=["country", "city", "state", "region"],
-        null_fill_value="N/A"
+    cleaned = (
+        df
+        .transform(clean_customer_names)
+        .transform(clean_customer_phones)
+        .transform(lambda df: fill_missing_values(df, ["country", "city", "state", "region"], "N/A"))
     )
     
-    # Additional filter for explicit outliers found in the data
+    # Filter outliers found in the data
     outliers = ["Sample Company A", "N/A", ""]
     cleaned = cleaned.filter(~F.col("customer_name").isin(outliers))
     cleaned = cleaned.filter(~F.col("customer_name").rlike(r"(?i)Sample Company"))
     
+    # Deduplicate and add surrogate key
+    cleaned = deduplicate(df=cleaned, key_columns=["customer_id"])
     return generate_surrogate_key(df=cleaned, key_columns=["customer_id"], sk_column_name="customer_key")
 
 def transform_products(*, df: DataFrame) -> DataFrame:
-    """Clean products & add surrogate key."""
-    cleaned = clean_dataset(
-        df=df, 
-        clean_text_cols=["product_name"], 
-        handle_null_cols=["category", "sub_category"],
-        null_fill_value="N/A"
-    )
+    """Transform products & add surrogate key."""
+    cleaned = df.transform(lambda df: fill_missing_values(df, ["category", "sub_category"], "N/A"))
+    
+    # Deduplicate and add surrogate key
+    cleaned = deduplicate(df=cleaned, key_columns=["product_id"])
     return generate_surrogate_key(df=cleaned, key_columns=["product_id"], sk_column_name="product_key")
 
 def transform_orders(*, df: DataFrame) -> DataFrame:
     """Clean orders & parse dates."""
-    cleaned = clean_dataset(
-        df=df,
-        mandatory_cols=["order_id", "customer_id", "product_id"]
-    )
+    cleaned = df.dropna(subset=["order_id", "customer_id", "product_id"])
     parsed = parse_date_col(df=cleaned, date_col="order_date", date_format="d/M/y")
     return parse_date_col(df=parsed, date_col="ship_date", date_format="d/M/y")
 

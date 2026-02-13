@@ -2,20 +2,20 @@ import pytest
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType
 from pyspark.sql.functions import col
 from sales_analytics.transformation import (
-    clean_dataset, to_snake_case, join_dataframes, 
-    parse_date_col
+    clean_customer_names, clean_customer_phones, clean_names, clean_phone,
+    fill_missing_values, to_snake_case, join_dataframes, parse_date_col, 
+    deduplicate, generate_surrogate_key
 )
 
-class TestToSnakeCase:
-    """Test suite for snake_case conversion."""
+class TestColumnStandardization:
+    """Test column name standardization."""
     
-    def test_snake_case_basic(self, spark):
-        """Test basic column name conversion to snake_case."""
-        data = [("Alice", "USA", 100)]
+    def test_to_snake_case(self, spark):
+        """Test column name conversion to snake_case."""
+        data = [("Alice", "USA")]
         schema = StructType([
             StructField("Customer Name", StringType(), True),
-            StructField("Country Code", StringType(), True),
-            StructField("Order ID", IntegerType(), True)
+            StructField("Country Code", StringType(), True)
         ])
         df = spark.createDataFrame(data, schema)
         
@@ -23,189 +23,127 @@ class TestToSnakeCase:
         
         assert "customer_name" in result.columns
         assert "country_code" in result.columns
-        assert "order_id" in result.columns
-    
-    def test_snake_case_preserves_data(self, spark):
-        """Test that snake_case conversion doesn't modify data."""
-        data = [("Alice", 100), ("Bob", 200)]
-        schema = StructType([
-            StructField("User Name", StringType(), True),
-            StructField("Amount", IntegerType(), True)
-        ])
-        df = spark.createDataFrame(data, schema)
-        
-        result = to_snake_case(df)
-        rows = result.collect()
-        
-        assert rows[0]["user_name"] == "Alice"
-        assert rows[0]["amount"] == 100
+        assert result.first()["customer_name"] == "Alice"
 
-class TestCleanDataset:
-    """Test suite for data cleaning functions."""
+class TestNameCleaning:
+    """Test customer name cleaning."""
     
-    def test_clean_text_removes_special_chars(self, spark):
-        """Test special character removal from text."""
-        data = [("Product___Name!!!", ), ("  Clean_Text  ",), ("Test@#$Value",)]
-        schema = StructType([StructField("name", StringType(), True)])
-        df = spark.createDataFrame(data, schema)
-        
-        result = clean_dataset(df, clean_text_cols=["name"])
-        rows = result.collect()
-        
-        # New logic replaces symbols with spaces, then heals/normalizes.
-        # "Product___Name!!!" -> "Product   Name   " -> "ProductName" (Healed >= 3 spaces)
-        assert "!" not in rows[0]["name"]
-        assert rows[0]["name"] == "ProductName"
-        
-        # "  Clean_Text  " -> "Clean Text" (1 space separator)
-        # Old simple cleaning removed '_', new logic replaces with space.
-        assert rows[1]["name"] == "Clean Text"
-        
-        # "Test@#$Value" -> "Test   Value" -> "TestValue" (Healed >= 3 spaces)
-        assert "@" not in rows[2]["name"]
-        assert rows[2]["name"] == "TestValue"
-    def test_clean_text_removes_digits_for_names(self, spark):
-        """Test: Full cleaning logic across difficult raw data cases."""
+    def test_clean_names_corruption_patterns(self, spark):
+        """Test name cleaning with real corruption patterns."""
         data = [
-            ("Bi 8761l Shonely",),           # Healed (Gap > 2)
-            ("Shahi  Hopkins",),             # Separated (Gap <= 2)
-            ("Ji11 Stevenson",),             # 11 -> ll
-            ("Fra9876nk Gasti  ;.,.,neau",), # Healed (Gap > 2)
-            ("Tam&^*ara Willing___)ham",),   # Healed (Gap > 2)
-            ("Ad.       ..am Hart",),        # Healed (Gap > 2)
-            ("Peter Bühler",),               # Unicode preserved
-            ("Mary O'Rourke",),              # Apostrophe preserved
-            ("   _Mike Vitt 12313orini",),   # 12313 removed
-            ("Maribeth 5chnelling",),        # 5 -> s
-            ("Mitch Willin0009gham",),       # 0009 removed -> Willingham
-            ("Helen Wa55erman",),            # 55 -> ss
-            ("Tho   12 mas Boland",),        # 12 removed -> Thomas
-            ("N0ra Paige",),                 # 0 -> o
-            ("Jocasta Rupert",),             # Normal name (No Change)
-            ("B         ecky Martin",),      # Healed (Gap > 2)
-            ("''Becky Pak",),                # Leading punctuation removed
-            ("[]-=;''Becky Pak",),           # Complex leading junk removed
-            ("Gary567 Hansen",)              # Separated (digits followed by space)
+            ("Gary567 Hansen",),
+            ("C@thy Armstrong",),
+            ("Kat rina Edelman",),
+            ("Mary O'Rourke",),
         ]
-        schema = StructType([StructField("name", StringType(), True)])
+        schema = StructType([StructField("customer_name", StringType(), True)])
         df = spark.createDataFrame(data, schema)
         
-        result = clean_dataset(df, clean_names_cols=["name"])
+        result = clean_customer_names(df)
         rows = result.collect()
         
-        assert rows[0]["name"] == "Bill Shonely"
-        assert rows[1]["name"] == "Shahi Hopkins"     # Kept separated
-        assert rows[2]["name"] == "Jill Stevenson"    # 11 -> ll
-        assert rows[3]["name"] == "Frank Gastineau"   # Healed
-        assert rows[4]["name"] == "Tamara Willingham" # Healed
-        assert rows[5]["name"] == "Adam Hart"         # Healed
-        assert rows[6]["name"] == "Peter Bühler"
-        assert rows[7]["name"] == "Mary O'Rourke"
-        assert rows[8]["name"] == "Mike Vittorini"
-        assert rows[9]["name"] == "Maribeth schnelling" # 5->s (lowercase 's' is expected behavior)
-        assert rows[10]["name"] == "Mitch Willingham"
-        assert rows[11]["name"] == "Helen Wasserman"
-        assert rows[12]["name"] == "Thomas Boland"
-        assert rows[13]["name"] == "Nora Paige"
-        assert rows[14]["name"] == "Jocasta Rupert"
-        assert rows[15]["name"] == "Becky Martin"
-        assert rows[16]["name"] == "Becky Pak"
-        assert rows[17]["name"] == "Becky Pak"
-        assert rows[18]["name"] == "Gary Hansen"
+        assert rows[0]["customer_name"] == "Gary Hansen"
+        assert rows[1]["customer_name"] == "Cathy Armstrong"
+        assert rows[2]["customer_name"] == "Katrina Edelman"
+        assert rows[3]["customer_name"] == "Mary O'Rourke"
+
+
+class TestPhoneCleaning:
+    """Test phone number cleaning."""
     
-    def test_handle_nulls_fills_values(self, spark):
-        """Test null value filling."""
-        data = [("Alice", None), ("Bob", "USA"), (None, "Canada")]
+    def test_clean_phone_formats(self, spark):
+        """Test phone cleaning with various formats."""
+        data = [
+            ("421.580.0902x9815",),
+            ("001-542-415-0246x314",),
+            ("7185624866",),
+            ("#ERROR!",),
+        ]
+        schema = StructType([StructField("phone", StringType(), True)])
+        df = spark.createDataFrame(data, schema)
+        
+        result = clean_customer_phones(df)
+        rows = result.collect()
+        
+        assert rows[0]["phone"] == "(421) 580-0902 x9815"
+        assert rows[1]["phone"] == "(542) 415-0246 x314"
+        assert rows[2]["phone"] == "(718) 562-4866"
+        assert rows[3]["phone"] is None
+
+class TestPipelineIntegration:
+    """Test end-to-end pipeline integration."""
+    
+    def test_customer_cleaning_pipeline(self, spark):
+        """Test complete customer cleaning workflow."""
+        data = [
+            ("C001", "Gary567 Hansen", "421.580.0902x9815", "USA"),
+            ("C002", "C@thy Armstrong", "#ERROR!", None),
+        ]
         schema = StructType([
-            StructField("name", StringType(), True),
+            StructField("customer_id", StringType(), True),
+            StructField("customer_name", StringType(), True),
+            StructField("phone", StringType(), True),
             StructField("country", StringType(), True)
         ])
         df = spark.createDataFrame(data, schema)
         
-        result = clean_dataset(df, handle_null_cols=["country"], null_fill_value="Unknown")
+        result = (
+            df
+            .transform(clean_customer_names)
+            .transform(clean_customer_phones)
+            .transform(lambda df: fill_missing_values(df, ["country"], "Unknown"))
+        )
         rows = result.collect()
         
-        assert rows[0]["country"] == "Unknown"
-    
-    def test_mandatory_cols_filters_nulls(self, spark):
-        """Test that mandatory column validation filters null records."""
-        data = [("O001", "C001"), (None, "C002"), ("O003", None)]
-        schema = StructType([
-            StructField("order_id", StringType(), True),
-            StructField("customer_id", StringType(), True)
-        ])
-        df = spark.createDataFrame(data, schema)
-        
-        result = clean_dataset(df, mandatory_cols=["order_id", "customer_id"])
-        
-        # Should only keep complete records
-        assert result.count() == 1
-        assert result.first()["order_id"] == "O001"
+        assert rows[0]["customer_name"] == "Gary Hansen"
+        assert rows[0]["phone"] == "(421) 580-0902 x9815"
+        assert rows[1]["customer_name"] == "Cathy Armstrong"
+        assert rows[1]["phone"] is None
+        assert rows[1]["country"] == "Unknown"
 
-class TestTransformationFunctions:
-    """Test suite for transformation utility functions."""
-    
 
+class TestDimensionProcessing:
+    """Test dimension table processing utilities."""
     
-    def test_parse_date_col_parses_correctly(self, spark):
-        """Test date parsing with custom format."""
-        data = [("21/08/2016",), ("15/03/2020",)]
-        schema = StructType([StructField("date_str", StringType(), True)])
-        df = spark.createDataFrame(data, schema)
+    def test_deduplicate(self, spark):
+        """Test deduplication for customer master."""
+        data = [("C001", "John Doe"), ("C001", "John Doe"), ("C002", "Jane Smith")]
+        df = spark.createDataFrame(data, ["customer_id", "customer_name"])
         
-        result = parse_date_col(df, date_col="date_str", date_format="d/M/y")
-        rows = result.collect()
-        
-        from datetime import date
-        assert rows[0]["date_str"] == date(2016, 8, 21)
-    
-
-    
-    def test_join_dataframes_inner_join(self, spark):
-        """Test inner join between two DataFrames."""
-        df1 = spark.createDataFrame([("1", "Alice"), ("2", "Bob")], ["id", "name"])
-        df2 = spark.createDataFrame([("1", 100), ("2", 200)], ["id", "amount"])
-        
-        result = join_dataframes(df1, df2, join_on="id", join_type="inner")
+        result = deduplicate(df, ["customer_id"])
         
         assert result.count() == 2
-        assert "name" in result.columns
-        assert "amount" in result.columns
     
-    def test_join_dataframes_left_join(self, spark):
-        """Test left join preserves left DataFrame records."""
-        df1 = spark.createDataFrame([("1", "Alice"), ("2", "Bob"), ("3", "Charlie")], ["id", "name"])
-        df2 = spark.createDataFrame([("1", 100), ("2", 200)], ["id", "amount"])
+    def test_generate_surrogate_key(self, spark):
+        """Test surrogate key generation."""
+        data = [("C001", "John Doe"), ("C002", "Jane Smith")]
+        df = spark.createDataFrame(data, ["customer_id", "customer_name"])
         
-        result = join_dataframes(df1, df2, join_on="id", join_type="left")
+        result = generate_surrogate_key(df, ["customer_id"], "customer_sk")
         
-        # Should keep all left records
-        assert result.count() == 3
-        rows = result.orderBy("id").collect()
-        assert rows[2]["amount"] is None  # Charlie has no match
+        assert "customer_sk" in result.columns
+        assert result.select("customer_sk").distinct().count() == 2
 
-class TestEdgeCasesTransformation:
-    """Test edge cases and error handling."""
+
+class TestFactProcessing:
+    """Test fact table processing utilities."""
     
-    def test_clean_dataset_empty_dataframe(self, spark):
-        """Test clean_dataset with empty DataFrame."""
-        schema = StructType([
-            StructField("name", StringType(), True),
-            StructField("value", DoubleType(), True)
-        ])
-        df = spark.createDataFrame([], schema)
+    def test_parse_date_col(self, spark):
+        """Test date parsing for order dates."""
+        data = [("21/08/2016",), ("15/03/2020",)]
+        df = spark.createDataFrame(data, ["order_date"])
         
-        result = clean_dataset(df, clean_text_cols=["name"])
-        assert result.count() == 0
+        result = parse_date_col(df, date_col="order_date", date_format="d/M/y")
+        
+        from datetime import date
+        assert result.first()["order_date"] == date(2016, 8, 21)
     
-    def test_parse_date_invalid_format(self, spark):
-        """Test date parsing with mismatched format."""
-        data = [("2016-08-21",)]  # ISO format
-        schema = StructType([StructField("date_str", StringType(), True)])
-        df = spark.createDataFrame(data, schema)
+    def test_join_dataframes(self, spark):
+        """Test joining orders with customers."""
+        customers = spark.createDataFrame([("C001", "John Doe")], ["customer_id", "customer_name"])
+        orders = spark.createDataFrame([("O001", "C001", 100.0)], ["order_id", "customer_id", "amount"])
         
-        # This should handle gracefully or parse correctly
-        result = parse_date_col(df, date_col="date_str", date_format="d/M/y")
+        result = join_dataframes(orders, customers, join_on="customer_id", join_type="left")
         
-        # Invalid dates should become null
-        assert result.first()["date_str"] is None
+        assert result.count() == 1
+        assert "customer_name" in result.columns

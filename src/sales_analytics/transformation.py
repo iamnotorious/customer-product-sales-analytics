@@ -1,63 +1,149 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, current_timestamp, broadcast
+from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, current_timestamp, broadcast, concat
 
-def clean_text(df: DataFrame, column_name: str) -> DataFrame:
+def clean_names(df: DataFrame, column_name: str, apply_title_case: bool = False) -> DataFrame:
     """
-    Cleans text based on refined name cleaning rules.
-    1. Normalizes leetspeak (e.g. 1l->ll, 1->l).
-    2. Removes numeric sequences (2+ digits).
-    3. Replaces special characters/digits with spaces.
-    4. Heals fragmented names (merges gaps > 2 spaces).
-    5. Normalizes separators (collapses 1-2 spaces to single space).
+    Cleans text by removing unwanted characters while preserving legitimate separators.
+    
+    Strategy:
+    1. Preserve only letters, spaces, and apostrophes
+    2. Remove special chars/digits as noise (merge adjacent text)
+    3. Preserve spaces that existed in original input
+    4. Merge fragmented text caused by special characters and digits
+    
+    Args:
+        df: Input DataFrame.
+        column_name: Column to clean.
+        apply_title_case: If True, applies proper title case (for names). Default False.
     """
-    from pyspark.sql.functions import trim
+    from pyspark.sql.functions import trim, udf
+    from pyspark.sql.types import StringType as SparkStringType
     
-    # Step 0: Handle combined leetspeak (1l -> ll, 55 -> ss, 11 -> ll)
-    df = df.withColumn(column_name, regexp_replace(col(column_name), "1l", "ll"))
-    df = df.withColumn(column_name, regexp_replace(col(column_name), "11", "ll"))
-    df = df.withColumn(column_name, regexp_replace(col(column_name), "55", "ss"))
+    # Character substitution for word-start positions (uppercase)
+    WORD_START_UPPER = {'1': 'L', '0': 'O', '5': 'S', '!': 'I', '@': 'A'}
     
-    # Step 1: Remove sequences of 2 or more digits with Context-Awareness
-    # Order matters to handle spaces correctly.
+    # Apply combined leetspeak patterns first
+    # Examples: "Ji11 Stevenson" -> "Jill Stevenson", "Helen Wa55erman" -> "Helen Wasserman"
+    for pattern, replacement in [('1l', 'll'), ('11', 'll'), ('55', 'ss')]:
+        df = df.withColumn(column_name, regexp_replace(col(column_name), pattern, replacement))
     
-    # Case A: Digits surrounded by spaces -> Remove digits AND spaces (Merge names)
-    # e.g. "Tho 12 mas" -> "Thomas"
-    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s+\d{2,}\s+', ''))
+    # Remove multi-digit sequences while preserving original spaces
+    SPACE_MARKER = '__SPACE__'
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r' ', SPACE_MARKER))
+    for pattern, replacement in [
+        # "Tho   12 mas Boland" -> "Thomas Boland" (digits surrounded by spaces)
+        (rf'{SPACE_MARKER}\d{{2,}}{SPACE_MARKER}', ''),
+        # "Bi 876ll" -> "Bill" (digits after space)
+        (rf'{SPACE_MARKER}\d{{2,}}', ''),
+        # "Gary567 Hansen" -> "Gary Hansen" (digits before space - keep space)
+        (rf'\d{{2,}}{SPACE_MARKER}', SPACE_MARKER),
+        # "Fra9876nk" -> "Frank" (embedded digits)
+        (r'\d{2,}', '')
+    ]:
+        df = df.withColumn(column_name, regexp_replace(col(column_name), pattern, replacement))
+    df = df.withColumn(column_name, regexp_replace(col(column_name), SPACE_MARKER, ' '))
     
-    # Case B: Digits preceded by space -> Remove digits AND preceding space (Merge names)
-    # e.g. "Bi 876ll" -> "Bill"
-    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s+\d{2,}', ''))
+    # Character substitutions with case awareness
+    # Examples: "N0ra Paige" -> "Nora Paige" (word start), "Willin0009gham" -> "Willingham" (mid-word)
+    for char, upper in WORD_START_UPPER.items():
+        df = df.withColumn(column_name, regexp_replace(col(column_name), rf'(^|\s){char}', f'$1{upper}'))
+    # "C@thy Armstrong" -> "Cathy Armstrong", "Karen Dan!els" -> "Karen Daniels"
+    for char, lower in [('1', 'l'), ('0', 'o'), ('5', 's'), ('!', 'i'), ('@', 'a')]:
+        df = df.withColumn(column_name, regexp_replace(col(column_name), char, lower))
     
-    # Case C: Digits followed by space -> Remove digits, KEEP 1 space (Separate names)
-    # e.g. "Gary567 Hansen" -> "Gary Hansen"
-    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}\s+', ' '))
+    # Remove all special characters (keep only letters, spaces, apostrophes)
+    # Examples: "Pete@#$ Takahito" -> "Petea Takahito", "Mary O'Rourke" -> "Mary O'Rourke" (keeps apostrophe)
+    df = df.withColumn(column_name, regexp_replace(col(column_name), r"[^\p{L}\s']", ''))
     
-    # Case D: Digits embedded/isolated -> Remove digits entirely
-    # e.g. "Fra9876nk" -> "Frank", "5678Shirley" -> "Shirley"
-    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}', ''))
+    # Space normalization and fragment merging
+    patterns = [
+        # "Gasti  neau" -> "Gastineau" (word + double-space + lowercase fragment)
+        (r'([A-Za-z]+)\s{2,}([a-z])', '$1$2'),
+        # "B         ecky Martin" -> "Becky Martin" (3+ spaces merge)
+        (r'\s{3,}', ''),
+        # "Shahi  Hopkins" -> "Shahi Hopkins" (normalize double space to single)
+        (r'\s{2}', ' '),
+        # "''Becky Pak" -> "Becky Pak" (remove leading/trailing apostrophes)
+        (r"^'+|'+$", ''),
+        # "C thy" -> "Cthy" (single uppercase + lowercase)
+        (r'\b([A-Z])\s+([a-z])', '$1$2'),
+        # "Dan els" -> "Danels" (lowercase + 1-2 char fragment at end)
+        (r'([a-z])\s+([a-z]{1,2})\b', '$1$2'),
+        # "Kat rina" -> "Katrina" (short capitalized word + lowercase fragment)
+        (r'\b([A-Z][a-z]{1,2})\s+([a-z]+)', '$1$2')
+    ]
+    for pattern, replacement in patterns:
+        df = df.withColumn(column_name, regexp_replace(col(column_name), pattern, replacement))
     
-    # Step 2: Map isolated single digits (leetspeak)
-    df = df.withColumn(column_name, regexp_replace(col(column_name), "1", "l"))
-    df = df.withColumn(column_name, regexp_replace(col(column_name), "0", "o"))
-    df = df.withColumn(column_name, regexp_replace(col(column_name), "5", "s"))
+    # Clean leading/trailing spaces
+    df = df.withColumn(column_name, trim(col(column_name)))
     
-    # Rule 1: Replace SPECIAL CHARACTERS (non-alphanumeric) with a space
-    # excluding single quotes
-    df = df.withColumn(column_name, regexp_replace(col(column_name), r'[^\p{L}\s\']', ' '))
+    # Apply title case for names if requested
+    # Examples: "john DOE" -> "John Doe", "mary o'rourke" -> "Mary O'Rourke"
+    if apply_title_case:
+        def proper_case(text: str) -> str:
+            if not text:
+                return text
+            import re
+            result = text.title()
+            # Fix apostrophe capitalization: "O'rourke" -> "O'Rourke", "D'angelo" -> "D'Angelo"
+            return re.sub(r"'([a-z])", lambda m: f"'{m.group(1).upper()}", result)
+        
+        proper_case_udf = udf(proper_case, SparkStringType())
+        df = df.withColumn(column_name, proper_case_udf(col(column_name)))
     
-    # Rule 2: Heuristic for Healing vs Separating (Post-processing)
-    # - If gap is large (>= 3 spaces), assume it was noise -> Merge (Empty String)
-    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s{3,}', ''))
+    return df
+
+def clean_phone(df: DataFrame, column_name: str, remove_errors: bool = True) -> DataFrame:
+    """
+    Cleans phone numbers to format: (xxx) xxx-xxxx xEXT
+    Handles various formats, country codes (001), extensions, and removes errors.
     
-    # - If gap is small (1-2 spaces), assume it is a separator -> Normalize (Single Space)
-    df = df.withColumn(column_name, regexp_replace(col(column_name), r'\s+', ' '))
+    Examples:
+        "421.580.0902x9815" -> "(421) 580-0902 x9815"
+        "001-542-415-0246x314" -> "(542) 415-0246 x314"
+        "7185624866" -> "(718) 562-4866"
+        "#ERROR!" -> None
+        "-6181" -> None
+    """
+    from pyspark.sql.functions import udf
+    from pyspark.sql.types import StringType as SparkStringType
+    import re
     
-    # Final Polish: Trim whitespace AND specific leading/trailing punctuation/symbols
-    # This handles "''Becky Pak" -> "Becky Pak" while keeping "O'Rourke"
-    # (^[\W_]+) matches non-word chars at start, ([\W_]+$) matches at end.
-    df = df.withColumn(column_name, regexp_replace(col(column_name), r'(^[\W_]+)|([\W_]+$)', ''))
+    def format_phone(phone: str) -> str:
+        # Remove invalid entries: #ERROR!, empty strings, negative numbers
+        if not phone or phone in ('#ERROR!', '') or phone.startswith('-'):
+            return None
+        
+        # Extract extension: "x9815" -> "9815"
+        ext_match = re.search(r'x(\d+)', phone)
+        ext = ext_match.group(1) if ext_match else None
+        
+        # Remove extension and extract digits: "421.580.0902" -> "4215800902"
+        phone_no_ext = re.sub(r'x\d+', '', phone)
+        digits = re.sub(r'\D', '', phone_no_ext)
+        
+        # Remove country code: "0015424150246" -> "5424150246"
+        if digits.startswith('001'):
+            digits = digits[3:]
+        
+        # Validate minimum length (need at least 10 digits)
+        if len(digits) < 10:
+            return None
+        
+        # Format as (xxx) xxx-xxxx
+        if len(digits) == 10:
+            formatted = f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+        else:
+            # Handle extra digits: (xxx) xxx-xxxx EXTRA
+            formatted = f"({digits[:3]}) {digits[3:6]}-{digits[6:10]} {digits[10:]}"
+        
+        # Add extension if present
+        return f"{formatted} x{ext}" if ext else formatted
     
-    return df.withColumn(column_name, trim(col(column_name)))
+    phone_udf = udf(format_phone, SparkStringType())
+    return df.withColumn(column_name, phone_udf(col(column_name)))
+
 
 def handle_nulls(df: DataFrame, columns: list, default_value: str = "N/A") -> DataFrame:
     """
@@ -109,38 +195,43 @@ def generate_surrogate_key(df: DataFrame, key_columns: list, sk_column_name: str
     from pyspark.sql.functions import md5, concat_ws
     return df.withColumn(sk_column_name, md5(concat_ws("||", *[col(c) for c in key_columns])))
 
-def clean_dataset(
-    df: DataFrame, 
-    clean_text_cols: list = None, 
-    clean_names_cols: list = None,
-    handle_null_cols: list = None, 
-    null_fill_value: str = "N/A",
-    mandatory_cols: list = None
-) -> DataFrame:
+def clean_customer_names(df: DataFrame, name_column: str = "customer_name") -> DataFrame:
     """
-    Generic function to clean a dataset based on provided rules.
-    """
-    cleaned_df = df
+    Cleans customer name column by removing corruption and applying title case.
     
-    # 1. Aggressive name cleaning (follow specific user rules)
-    if clean_names_cols:
-        for col_name in clean_names_cols:
-            cleaned_df = clean_text(cleaned_df, col_name)
+    Example:
+        "Gary567 Hansen" -> "Gary Hansen"
+        "C@thy Armstrong" -> "Cathy Armstrong"
+    """
+    return clean_names(df, name_column, apply_title_case=True)
 
-    # 2. Standard text cleaning (remove symbols, keep alphanumeric)
-    if clean_text_cols:
-        for col_name in clean_text_cols:
-            cleaned_df = clean_text(cleaned_df, col_name)
-            
-    # 3. Handle Nulls
-    if handle_null_cols:
-        cleaned_df = handle_nulls(cleaned_df, handle_null_cols, null_fill_value)
-        
-    # 3. Enforce Mandatory Columns
-    if mandatory_cols:
-        cleaned_df = cleaned_df.dropna(subset=mandatory_cols)
-        
-    return cleaned_df
+
+def clean_customer_phones(df: DataFrame, phone_column: str = "phone") -> DataFrame:
+    """
+    Standardizes phone numbers to format: (xxx) xxx-xxxx xEXT
+    
+    Example:
+        "421.580.0902x9815" -> "(421) 580-0902 x9815"
+        "#ERROR!" -> None
+    """
+    return clean_phone(df, phone_column)
+
+
+def fill_missing_values(df: DataFrame, columns: list, default_value: str = "Unknown") -> DataFrame:
+    """
+    Fills null values in specified columns with a default value.
+    
+    Args:
+        df: Input DataFrame.
+        columns: List of columns to fill nulls.
+        default_value: Value to use for null replacement.
+    
+    Example:
+        Input: [("John", None), ("Jane", "USA")]
+        columns: ["country"]
+        Output: [("John", "Unknown"), ("Jane", "USA")]
+    """
+    return handle_nulls(df, columns, default_value)
 
 def join_dataframes(
     left_df: DataFrame, 
@@ -150,8 +241,8 @@ def join_dataframes(
     broadcast_right: bool = False
 ) -> DataFrame:
     """
-    Generic function to join two dataframes.
-    Optionally broadcasts the right DataFrame for Map-Side Join.
+    Joins two DataFrames on specified column.
+    Optionally broadcasts the right DataFrame for map-side join.
     """
     if broadcast_right:
         return left_df.join(broadcast(right_df), join_on, join_type)
