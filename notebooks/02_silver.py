@@ -96,10 +96,7 @@ def transform_customers(*, df: DataFrame) -> DataFrame:
         .transform(lambda df: fill_missing_values(df, ["country", "city", "state", "region"], "N/A"))
     )
     
-    # Filter outliers found in the data
-    outliers = ["Sample Company A", "N/A", ""]
-    cleaned = cleaned.filter(~F.col("customer_name").isin(outliers))
-    cleaned = cleaned.filter(~F.col("customer_name").rlike(r"(?i)Sample Company"))
+
     
     # Deduplicate and add surrogate key
     cleaned = deduplicate(df=cleaned, key_columns=["customer_id"])

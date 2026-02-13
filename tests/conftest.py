@@ -6,7 +6,6 @@ from pyspark.sql import SparkSession
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "notebooks"))
 
-# WHY: PySpark workers must use the same Python as the driver to avoid version conflicts
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 

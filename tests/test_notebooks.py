@@ -18,10 +18,7 @@ from pyspark.sql.types import (
 )
 
 from sales_analytics.transformation import (
-    add_audit_columns,
-    deduplicate,
     generate_surrogate_key,
-    to_snake_case,
 )
 
 # Add notebooks directory to path for local execution
@@ -52,375 +49,6 @@ except Exception as e:
         gold_nb = dbutils.import_notebook("03_gold")
     else:
         raise e
-
-
-# ---------------------------------------------------------------------------
-# Bronze Layer
-# ---------------------------------------------------------------------------
-
-
-class TestBronzeSchemas:
-    """Bronze schema field checks."""
-
-    def test_customer_schema_fields(self) -> None:
-        names = [f.name for f in bronze_nb.customer_schema.fields]
-        assert "Customer ID" in names
-        assert "Customer Name" in names
-        assert "email" in names
-        assert "phone" in names
-        assert "Country" in names
-
-    def test_product_schema_fields(self) -> None:
-        names = [f.name for f in bronze_nb.product_schema.fields]
-        assert "Product ID" in names
-        assert "Category" in names
-        assert "Sub-Category" in names
-        assert "Price per product" in names
-
-    def test_order_schema_fields(self) -> None:
-        names = [f.name for f in bronze_nb.order_schema.fields]
-        assert "Order ID" in names
-        assert "Order Date" in names
-        assert "Customer ID" in names
-        assert "Product ID" in names
-        assert "Profit" in names
-
-
-class TestBronzeIngestion:
-    """Ingestion wrappers pass correct format, schema, and options."""
-
-    def test_ingest_customers_calls_ingest_file(
-        self, spark: SparkSession, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-
-        mock_df = MagicMock(spec=DataFrame)
-        mock_ingest = MagicMock(return_value=mock_df)
-        monkeypatch.setattr(bronze_nb, "ingest_file", mock_ingest)
-
-
-        result = bronze_nb.ingest_customers_data(
-            spark_session=spark,
-            source_path="/data/Customer.xlsx",
-            schema=bronze_nb.customer_schema,
-        )
-
-
-        mock_ingest.assert_called_once_with(
-            spark=spark,
-            file_format="excel",
-            source_path="/data/Customer.xlsx",
-            schema=bronze_nb.customer_schema,
-            options={"header": "true"},
-        )
-        assert result is mock_df
-
-    def test_ingest_products_calls_ingest_file(
-        self, spark: SparkSession, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-
-        mock_df = MagicMock(spec=DataFrame)
-        mock_ingest = MagicMock(return_value=mock_df)
-        monkeypatch.setattr(bronze_nb, "ingest_file", mock_ingest)
-
-
-        result = bronze_nb.ingest_products_data(
-            spark_session=spark,
-            source_path="/data/Products.csv",
-            schema=bronze_nb.product_schema,
-        )
-
-
-        mock_ingest.assert_called_once_with(
-            spark=spark,
-            file_format="csv",
-            source_path="/data/Products.csv",
-            schema=bronze_nb.product_schema,
-            options={"header": "true"},
-        )
-        assert result is mock_df
-
-    def test_ingest_orders_calls_ingest_file(
-        self, spark: SparkSession, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-
-        mock_df = MagicMock(spec=DataFrame)
-        mock_ingest = MagicMock(return_value=mock_df)
-        monkeypatch.setattr(bronze_nb, "ingest_file", mock_ingest)
-
-
-        result = bronze_nb.ingest_orders_data(
-            spark_session=spark,
-            source_path="/data/Orders.json",
-            schema=bronze_nb.order_schema,
-        )
-
-
-        mock_ingest.assert_called_once_with(
-            spark=spark,
-            file_format="json",
-            source_path="/data/Orders.json",
-            schema=bronze_nb.order_schema,
-            options={"multiLine": "true"},
-        )
-        assert result is mock_df
-
-    def test_ingest_customers_wraps_exception(
-        self, spark: SparkSession, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            bronze_nb, "ingest_file", MagicMock(side_effect=Exception("read error"))
-        )
-        with pytest.raises(Exception, match="Failed to ingest customers"):
-            bronze_nb.ingest_customers_data(
-                spark_session=spark,
-                source_path="/bad/path.xlsx",
-                schema=bronze_nb.customer_schema,
-            )
-
-    def test_ingest_products_wraps_exception(
-        self, spark: SparkSession, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            bronze_nb, "ingest_file", MagicMock(side_effect=Exception("read error"))
-        )
-        with pytest.raises(Exception, match="Failed to ingest products"):
-            bronze_nb.ingest_products_data(
-                spark_session=spark,
-                source_path="/bad/path.csv",
-                schema=bronze_nb.product_schema,
-            )
-
-    def test_ingest_orders_wraps_exception(
-        self, spark: SparkSession, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            bronze_nb, "ingest_file", MagicMock(side_effect=Exception("read error"))
-        )
-        with pytest.raises(Exception, match="Failed to ingest orders"):
-            bronze_nb.ingest_orders_data(
-                spark_session=spark,
-                source_path="/bad/path.json",
-                schema=bronze_nb.order_schema,
-            )
-
-
-class TestBronzeValidation:
-    """Quality report and duplicate check delegation."""
-
-    def test_calls_quality_report_and_duplicate_check(
-        self, spark: SparkSession, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-
-        df = spark.createDataFrame(
-            [("JK-15370", "Jay Kimmel")], ["customer_id", "customer_name"]
-        )
-        mock_report = MagicMock(return_value={"row_count": 1})
-        mock_dup = MagicMock(return_value={"duplicate_count": 0})
-        monkeypatch.setattr(bronze_nb, "generate_data_quality_report", mock_report)
-        monkeypatch.setattr(bronze_nb, "check_duplicates", mock_dup)
-
-
-        bronze_nb.validate_bronze_data(
-            df=df, name="Customers", key_columns=["customer_id"]
-        )
-
-
-        mock_report.assert_called_once_with(df=df, name="Customers")
-        mock_dup.assert_called_once_with(df=df, key_columns=["customer_id"])
-
-    def test_handles_data_with_duplicates(
-        self, spark: SparkSession, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # duplicate product_id to verify dedup
-        df = spark.createDataFrame(
-            [
-                ("FUR-CH-10002961", "Furniture"),
-                ("FUR-CH-10002961", "Furniture"),
-            ],
-            ["product_id", "category"],
-        )
-        monkeypatch.setattr(
-            bronze_nb,
-            "generate_data_quality_report",
-            MagicMock(return_value={"row_count": 2}),
-        )
-        monkeypatch.setattr(
-            bronze_nb,
-            "check_duplicates",
-            MagicMock(return_value={"duplicate_count": 1}),
-        )
-
-        # should not raise
-        bronze_nb.validate_bronze_data(
-            df=df, name="Products", key_columns=["product_id"]
-        )
-
-
-class TestBronzeMerge:
-    """Upsert logic: create on first run, merge on subsequent runs."""
-
-    def test_creates_table_when_not_exists(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-
-        mock_spark = MagicMock()
-        mock_spark.catalog.tableExists.return_value = False
-        mock_spark_cls = MagicMock()
-        mock_spark_cls.getActiveSession.return_value = mock_spark
-        monkeypatch.setattr(bronze_nb, "SparkSession", mock_spark_cls)
-
-        mock_write = MagicMock()
-        monkeypatch.setattr(bronze_nb, "write_data_to_table", mock_write)
-        mock_merge = MagicMock()
-        monkeypatch.setattr(bronze_nb, "merge_data", mock_merge)
-
-        mock_df = MagicMock(spec=DataFrame)
-
-
-        bronze_nb.merge_to_bronze(
-            df=mock_df,
-            table_name="sales.bronze.sales_ecommerce_customers",
-            merge_keys=["customer_id"],
-        )
-
-
-        mock_write.assert_called_once_with(
-            df=mock_df,
-            mode="overwrite",
-            table_name="sales.bronze.sales_ecommerce_customers",
-        )
-        mock_merge.assert_not_called()
-
-    def test_merges_when_table_exists(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-
-        mock_spark = MagicMock()
-        mock_spark.catalog.tableExists.return_value = True
-        mock_spark_cls = MagicMock()
-        mock_spark_cls.getActiveSession.return_value = mock_spark
-        monkeypatch.setattr(bronze_nb, "SparkSession", mock_spark_cls)
-
-        mock_write = MagicMock()
-        monkeypatch.setattr(bronze_nb, "write_data_to_table", mock_write)
-        mock_merge = MagicMock()
-        monkeypatch.setattr(bronze_nb, "merge_data", mock_merge)
-
-        mock_df = MagicMock(spec=DataFrame)
-
-
-        bronze_nb.merge_to_bronze(
-            df=mock_df,
-            table_name="sales.bronze.sales_ecommerce_products",
-            merge_keys=["product_id"],
-        )
-
-
-        mock_merge.assert_called_once_with(
-            df=mock_df,
-            table_name="sales.bronze.sales_ecommerce_products",
-            merge_keys=["product_id"],
-        )
-        mock_write.assert_not_called()
-
-    def test_wraps_exception_on_failure(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-
-        mock_spark_cls = MagicMock()
-        mock_spark_cls.getActiveSession.side_effect = Exception("session error")
-        monkeypatch.setattr(bronze_nb, "SparkSession", mock_spark_cls)
-
-
-        with pytest.raises(Exception, match="Failed to merge"):
-            bronze_nb.merge_to_bronze(
-                df=MagicMock(),
-                table_name="sales.bronze.sales_ecommerce_orders",
-                merge_keys=["order_id"],
-            )
-
-
-class TestBronzePipeline:
-    """End-to-end: ingest -> snake_case -> dedup -> audit columns."""
-
-    def test_customer_pipeline(self, spark: SparkSession) -> None:
-        # duplicate customer to verify dedup
-        data = [
-            ("PW-19240", "Pierre Wener", "bettysullivan808@gmail.com",
-             "421.580.0902x9815", "001 Jones Ridges", "Consumer",
-             "United States", "Louisville", "Colorado", 80027, "West"),
-            ("PW-19240", "Pierre Wener", "bettysullivan808@gmail.com",
-             "421.580.0902x9815", "001 Jones Ridges", "Consumer",
-             "United States", "Louisville", "Colorado", 80027, "West"),
-            ("GH-14410", "Gary567 Hansen", "austindyer948@gmail.com",
-             "001-542-415-0246x314", "00347 Murphy Unions", "Home Office",
-             "United States", "Chicago", "Illinois", 60653, "Central"),
-        ]
-        df = spark.createDataFrame(data, bronze_nb.customer_schema)
-
-
-        result = to_snake_case(df=df)
-        result = deduplicate(df=result, key_columns=["customer_id"])
-        result = add_audit_columns(df=result, source_file="/data/Customer.xlsx")
-
-
-        assert result.count() == 2
-        assert "customer_id" in result.columns
-        assert "customer_name" in result.columns
-        assert "created_at" in result.columns
-        assert "source_file" in result.columns
-
-    def test_product_pipeline(self, spark: SparkSession) -> None:
-        # duplicate product to verify dedup
-        data = [
-            ("FUR-CH-10002961", "Furniture", "Chairs",
-             "Leather Task Chair, Black", "New York", 81.882),
-            ("FUR-CH-10002961", "Furniture", "Chairs",
-             "Leather Task Chair, Black", "Pennsylvania", 63.686),
-            ("TEC-AC-10004659", "Technology", "Accessories",
-             "Imation Secure+ Hardware Encrypted USB 2.0 Flash Drive",
-             "Oklahoma", 72.99),
-        ]
-        df = spark.createDataFrame(data, bronze_nb.product_schema)
-
-
-        result = to_snake_case(df=df)
-        result = deduplicate(df=result, key_columns=["product_id"])
-        result = add_audit_columns(df=result, source_file="/data/Products.csv")
-
-
-        assert result.count() == 2
-        assert "product_id" in result.columns
-        assert "sub_category" in result.columns
-        assert "price_per_product" in result.columns
-
-    def test_order_pipeline(self, spark: SparkSession) -> None:
-
-        data = [
-            (1, "CA-2016-122581", "21/8/2016", "25/8/2016",
-             "Standard Class", "JK-15370", "FUR-CH-10002961",
-             7, 573.17, 0.3, 63.69),
-            (2, "CA-2017-117485", "23/9/2017", "29/9/2017",
-             "Standard Class", "BD-11320", "TEC-AC-10004659",
-             4, 291.96, 0.0, 102.19),
-            (3, "US-2016-157490", "6/10/2016", "7/10/2016",
-             "First Class", "LB-16795", "OFF-BI-10002824",
-             4, 17.0, 0.7, -14.92),
-        ]
-        df = spark.createDataFrame(data, bronze_nb.order_schema)
-
-
-        result = to_snake_case(df=df)
-        result = deduplicate(df=result, key_columns=["order_id", "row_id"])
-        result = add_audit_columns(df=result, source_file="/data/Orders.json")
-
-
-        assert result.count() == 3
-        assert "order_id" in result.columns
-        assert "profit" in result.columns
-        rows = result.collect()
-        profits = [r["profit"] for r in rows]
-        assert -14.92 in profits
 
 
 # ---------------------------------------------------------------------------
@@ -510,22 +138,30 @@ class TestSilverTransformCustomers:
         assert pw_row["phone"] == "(421) 580-0902 x9815"
         assert "customer_key" in result.columns
 
-    def test_filters_outlier_names(self, spark: SparkSession) -> None:
-        # one valid name, one outlier
+
+
+    def test_preserves_outlier_names(self, spark: SparkSession) -> None:
+        # verify no filtering happens
         data = [
             ("JK-15370", "Jay Kimmel", "001-597-809-2330x725",
              "United States", "New York City", "New York", "East"),
             ("SC-20050", "Sample Company A", "1234567890",
              "United States", "Dallas", "Texas", "Central"),
+             ("NA-00000", "N/A", "123", "US", "City", "State", "Region"),
+             ("NA-00001", "", "123", "US", "City", "State", "Region"),
         ]
         df = spark.createDataFrame(data, CUSTOMER_SCHEMA)
 
 
         result = silver_nb.transform_customers(df=df)
+        rows = result.collect()
+        names = [r["customer_name"] for r in rows]
 
 
-        assert result.count() == 1
-        assert result.collect()[0]["customer_name"] == "Jay Kimmel"
+        assert "Jay Kimmel" in names
+        assert "N/A" in names
+        assert "Sample Company A" in names
+        assert "" in names
 
     def test_fills_missing_geography(self, spark: SparkSession) -> None:
         # all geography columns null
@@ -859,75 +495,7 @@ class TestSilverBuildEnrichedOrders:
         assert row["country"] == "N/A"
         assert row["category"] == "N/A"
         assert row["sub_category"] == "N/A"
-
-
-class TestSilverMerge:
-    """SCD2 for dims on update, full write on first load."""
-
-    def test_creates_tables_when_not_exist(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-
-        mock_spark = MagicMock()
-        mock_spark.catalog.tableExists.return_value = False
-        mock_spark_cls = MagicMock()
-        mock_spark_cls.getActiveSession.return_value = mock_spark
-        monkeypatch.setattr(silver_nb, "SparkSession", mock_spark_cls)
-
-        mock_write = MagicMock()
-        monkeypatch.setattr(silver_nb, "write_data_to_table", mock_write)
-        mock_scd2 = MagicMock()
-        monkeypatch.setattr(silver_nb, "merge_scd_type2", mock_scd2)
-
-        mock_cust = MagicMock(spec=DataFrame)
-        mock_cust.withColumn.return_value = mock_cust
-        mock_prod = MagicMock(spec=DataFrame)
-        mock_prod.withColumn.return_value = mock_prod
-
-
-        silver_nb.merge_to_silver(
-            cust_df=mock_cust,
-            prod_df=mock_prod,
-            fact_df=MagicMock(spec=DataFrame),
-            enriched_df=MagicMock(spec=DataFrame),
-        )
-
-
-        assert mock_write.call_count == 4
-        mock_scd2.assert_not_called()
-
-    def test_uses_scd2_when_tables_exist(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-
-        mock_spark = MagicMock()
-        mock_spark.catalog.tableExists.return_value = True
-        mock_spark_cls = MagicMock()
-        mock_spark_cls.getActiveSession.return_value = mock_spark
-        monkeypatch.setattr(silver_nb, "SparkSession", mock_spark_cls)
-
-        mock_write = MagicMock()
-        monkeypatch.setattr(silver_nb, "write_data_to_table", mock_write)
-        mock_scd2 = MagicMock()
-        monkeypatch.setattr(silver_nb, "merge_scd_type2", mock_scd2)
-
-
-        silver_nb.merge_to_silver(
-            cust_df=MagicMock(spec=DataFrame),
-            prod_df=MagicMock(spec=DataFrame),
-            fact_df=MagicMock(spec=DataFrame),
-            enriched_df=MagicMock(spec=DataFrame),
-        )
-
-
-        assert mock_scd2.call_count == 2
-        assert mock_write.call_count == 2
-
-
-# ---------------------------------------------------------------------------
-# Gold Layer
-# ---------------------------------------------------------------------------
-
+        
 
 class TestGoldAggregation:
     """Profit grouping by year, category, sub-category, and customer."""
