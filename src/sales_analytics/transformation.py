@@ -13,11 +13,17 @@ def clean_text(df: DataFrame, column_name: str, aggressive_name_clean: bool = Fa
     from pyspark.sql.functions import trim
     
     if aggressive_name_clean:
-        # Step 0: Handle combined leetspeak (1l -> ll)
+        # Step 0: Handle combined leetspeak (1l -> ll, 55 -> ss, 11 -> ll)
+        # We handle specific multi-digit maps BEFORE removing generic multi-digits
         df = df.withColumn(column_name, regexp_replace(col(column_name), "1l", "ll"))
+        df = df.withColumn(column_name, regexp_replace(col(column_name), "11", "ll"))
+        df = df.withColumn(column_name, regexp_replace(col(column_name), "55", "ss"))
         
-        # Step 1: Map common "leetspeak" typos (Single digits)
-        # We do this BEFORE removing multi-digits to preserve things like Wa55erman
+        # Step 1: Remove sequences of 2 or more digits Entirely
+        # This will remove "12", "876", "0009", but "55" and "1l" are already saved
+        df = df.withColumn(column_name, regexp_replace(col(column_name), r'\d{2,}', ' '))
+        
+        # Step 2: Map isolated single digits (leetspeak)
         df = df.withColumn(column_name, regexp_replace(col(column_name), "1", "l"))
         df = df.withColumn(column_name, regexp_replace(col(column_name), "0", "o"))
         df = df.withColumn(column_name, regexp_replace(col(column_name), "5", "s"))
