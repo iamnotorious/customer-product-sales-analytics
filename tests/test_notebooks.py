@@ -42,10 +42,14 @@ try:
 except Exception as e:
     # Fallback for Databricks runtime where direct import is restricted
     if "Importing notebooks directly is not supported" in str(e):
-        import dbutils
-        bronze_nb = dbutils.import_notebook("../notebooks/01_bronze")
-        silver_nb = dbutils.import_notebook("../notebooks/02_silver")
-        gold_nb = dbutils.import_notebook("../notebooks/03_gold")
+        from databricks.sdk import WorkspaceClient
+        # Initialize with environment auth
+        w = WorkspaceClient()
+        dbutils = w.dbutils
+
+        bronze_nb = dbutils.import_notebook("01_bronze")
+        silver_nb = dbutils.import_notebook("02_silver")
+        gold_nb = dbutils.import_notebook("03_gold")
     else:
         raise e
 
