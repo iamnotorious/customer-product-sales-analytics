@@ -1,6 +1,8 @@
 """Bronze, Silver, and Gold notebook tests."""
 
 import importlib
+import sys
+import os
 from datetime import date
 from unittest.mock import MagicMock
 
@@ -22,9 +24,30 @@ from sales_analytics.transformation import (
     to_snake_case,
 )
 
-bronze_nb = importlib.import_module("01_bronze")
-silver_nb = importlib.import_module("02_silver")
-gold_nb = importlib.import_module("03_gold")
+# Add notebooks directory to path for local execution
+current_dir = os.getcwd()
+while True:
+    if os.path.exists(os.path.join(current_dir, "notebooks")):
+        sys.path.append(os.path.join(current_dir, "notebooks"))
+        break
+    parent = os.path.dirname(current_dir)
+    if parent == current_dir:
+        break
+    current_dir = parent
+
+try:
+    bronze_nb = importlib.import_module("01_bronze")
+    silver_nb = importlib.import_module("02_silver")
+    gold_nb = importlib.import_module("03_gold")
+except Exception as e:
+    # Fallback for Databricks runtime where direct import is restricted
+    if "Importing notebooks directly is not supported" in str(e):
+        import dbutils
+        bronze_nb = dbutils.import_notebook("../notebooks/01_bronze")
+        silver_nb = dbutils.import_notebook("../notebooks/02_silver")
+        gold_nb = dbutils.import_notebook("../notebooks/03_gold")
+    else:
+        raise e
 
 
 # ---------------------------------------------------------------------------
