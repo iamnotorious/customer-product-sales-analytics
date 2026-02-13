@@ -23,77 +23,16 @@ pytest tests/ -v
 
 ### Data Flow
 
-```mermaid
-graph LR
-    A[Raw CSV/Excel/JSON] --> B[Bronze Layer<br/>Raw Tables]
-    B --> C[Silver Layer<br/>Cleaned & Enriched]
-    C --> D[Gold Layer<br/>Aggregated Analytics]
-    
-    style A fill:#fff3cd
-    style B fill:#cd7f32
-    style C fill:#c0c0c0
-    style D fill:#ffd700
-```
+![FLOW_DIAGRAM.jpg](docs/FLOW_DIAGRAM.jpg "FLOW_DIAGRAM")
 
 ### Pipeline Flow
-
-```mermaid
-flowchart TD
-    A[Raw Data Files] -->|01_bronze.py| B[Bronze Tables]
-    B -->|02_silver.py| C[Clean Customers]
-    B -->|02_silver.py| D[Clean Products]
-    B -->|02_silver.py| E[Parse Orders]
-    
-    C --> F[Enriched Orders]
-    D --> F
-    E --> F
-    
-    F -->|03_gold.py| G[Profit Aggregates]
-    G --> H[SQL Analytics]
-    
-    style A fill:#e1f5ff
-    style B fill:#fff3cd
-    style F fill:#d4edda
-    style G fill:#ffd700
-```
-
+![PROCESS_FLOW.jpg](docs/PROCESS_FLOW.jpg)
 ---
 
 ## Data Model
 
 ### Entity Relationship
-
-```mermaid
-erDiagram
-    CUSTOMER ||--o{ ORDER : places
-    PRODUCT ||--o{ ORDER : contains
-    
-    CUSTOMER {
-        string customer_id PK
-        string customer_name
-        string phone
-        string country
-        string customer_key UK
-    }
-    
-    PRODUCT {
-        string product_id PK
-        string product_name
-        string category
-        string sub_category
-        string product_key UK
-    }
-    
-    ORDER {
-        string order_id PK
-        date order_date
-        string customer_key FK
-        string product_key FK
-        decimal profit
-        int quantity
-    }
-```
-
+![ER_ECOM_SALES.jpg](docs/ER_ECOM_SALES.jpg)
 ---
 
 ## Layer Specifications
@@ -117,6 +56,10 @@ erDiagram
 - Convert column names to snake_case
 - Remove duplicates
 - Add audit columns (created_at, source_file)
+
+**Load Strategy:**
+- **Customers/Products:** Incremental Upsert (Merge) based on unique IDs.
+- **Orders:** Full Overwrite (partitioned by `order_date`).
 
 ---
 
@@ -197,6 +140,10 @@ profit          double (rounded to 2 decimals)
 order_year      int
 ```
 
+**Load Strategy:**
+- **Dimensions:** SCD Type 2 Merge (maintains history with `effective_date`, `end_date`, `is_current`).
+- **Facts:** Incremental Partition Overwrite (supports date-range processing via widgets).
+
 ---
 
 ### Gold Layer (03_gold.py)
@@ -220,6 +167,9 @@ customer_name   string
 total_profit    double (rounded to 2 decimals)
 ```
 
+**Load Strategy:**
+- **Aggregates:** Full Overwrite (partitioned by `order_year`). Re-calculates metrics from Silver data.
+
 ---
 
 ## Transformation Functions
@@ -240,8 +190,6 @@ total_profit    double (rounded to 2 decimals)
 
 **Function:** `clean_customer_names(df)`
 
-**Test:** 785 real customer names tested, 100% success
-
 ---
 
 ### Phone Cleaning Rules
@@ -256,8 +204,6 @@ total_profit    double (rounded to 2 decimals)
 | `-xxxx` | `NULL` |
 
 **Function:** `clean_customer_phones(df)`
-
-**Test:** 29 format variations tested, 100% success
 
 ---
 
