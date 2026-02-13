@@ -8,7 +8,7 @@ from sales_analytics.validation import (
 
 
 def test_check_duplicates_none(spark):
-    """Test duplicate check with no duplicates."""
+    """No duplicates returns zero count."""
     data = [("1", "Alice"), ("2", "Bob"), ("3", "Charlie")]
     schema = StructType([
         StructField("id", StringType(), True),
@@ -21,7 +21,7 @@ def test_check_duplicates_none(spark):
     assert result["total_count"] == 3
 
 def test_check_duplicates_present(spark):
-    """Test duplicate check with duplicates."""
+    """Duplicate ID is counted correctly."""
     data = [("1", "Alice"), ("1", "Bob"), ("2", "Charlie")]
     schema = StructType([
         StructField("id", StringType(), True),
@@ -36,7 +36,7 @@ def test_check_duplicates_present(spark):
 
 
 def test_generate_data_quality_report(spark):
-    """Test data quality report generation."""
+    """Report includes row count, column count, and per-column null counts."""
     data = [("1", "Alice", 100.0), ("2", None, 200.0), ("3", "Bob", None)]
     schema = StructType([
         StructField("id", StringType(), True),

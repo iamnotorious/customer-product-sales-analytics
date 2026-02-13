@@ -9,7 +9,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def get_spark_session(app_name: str = "DatabricksApp") -> SparkSession:
-    """Get configured Spark session."""
+    """Return a Spark session with AQE and dynamic partition overwrite enabled."""
     logger.info(f"Starting Spark: {app_name}")
     return SparkSession.builder \
         .appName(app_name) \
@@ -19,8 +19,8 @@ def get_spark_session(app_name: str = "DatabricksApp") -> SparkSession:
         .getOrCreate()
 
 def write_data_to_table(df: DataFrame, table_format: str = "delta", mode: str = "append", table_name: str = None, partition_by: list = None):
-    """Write DataFrame to table."""
-    logger.info(f"Writing: mode={mode}")
+    """Save a DataFrame as a Delta table with optional partitioning."""
+    logger.info(f"Writing {table_name} (mode={mode})")
     
     writer = df.write.format(table_format).mode(mode)
     
@@ -40,7 +40,7 @@ def write_data_to_table(df: DataFrame, table_format: str = "delta", mode: str = 
         raise e
 
 def optimize_table(table_name: str, zorder_columns: list = None):
-    """Run OPTIMIZE on table (with optional Z-ORDER)."""
+    """Run OPTIMIZE (and optional ZORDER) on a Delta table."""
     spark = SparkSession.getActiveSession()
     
     sql = f"OPTIMIZE {table_name}"
@@ -56,8 +56,8 @@ def optimize_table(table_name: str, zorder_columns: list = None):
     logger.info(f"Optimized: {table_name}")
 
 def merge_data(df: DataFrame, table_name: str, merge_keys: list, update_columns: list = None):
-    """Merge (Upsert) data into Delta table."""
-    logger.info(f"Merging into {table_name} keys={merge_keys}")
+    """Upsert rows into a Delta table using MERGE on merge_keys."""
+    logger.info(f"Merging into {table_name} on {merge_keys}")
     
     df.createOrReplaceTempView("merge_source")
     
@@ -92,7 +92,7 @@ def merge_data(df: DataFrame, table_name: str, merge_keys: list, update_columns:
         raise e
 
 def merge_scd_type2(df: DataFrame, table_name: str, merge_keys: list, compare_columns: list = None):
-    """Apply SCD Type 2 merge (maintains history)."""
+    """SCD Type 2 merge: expire changed rows and insert new versions."""
     from pyspark.sql.functions import col, lit, current_timestamp, to_date
     
     logger.info(f"SCD2: {table_name}")

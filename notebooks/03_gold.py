@@ -42,8 +42,8 @@ def calculate_profit_aggregates(*, df: DataFrame) -> DataFrame:
         .orderBy(*group_cols)
 
 def merge_to_gold(*, df: DataFrame):
-    """Write aggregates to Gold (Partition Overwrite)."""
-    logger.info("Writing Aggregates")
+    """Overwrite the Gold profit aggregates table, partitioned by order_year."""
+    logger.info(f"Writing {gold_profit_aggregates_table}")
     write_data_to_table(
         df=df, 
         mode="overwrite", 

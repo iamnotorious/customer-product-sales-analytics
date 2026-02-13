@@ -1,6 +1,4 @@
-"""
-Data validation utilities for data quality checks.
-"""
+"""Null counts, duplicate detection, and quality reporting."""
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, count, countDistinct, isnan, when
 import logging
@@ -11,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def check_duplicates(df: DataFrame, key_columns: list) -> dict:
-    """Count duplicate records by key."""
+    """Return total, unique, and duplicate counts for key_columns."""
     total_count = df.count()
     unique_count = df.select(*key_columns).distinct().count()
     duplicate_count = total_count - unique_count
@@ -32,8 +30,8 @@ def check_duplicates(df: DataFrame, key_columns: list) -> dict:
 
 
 def generate_data_quality_report(df: DataFrame, name: str = "Dataset") -> dict:
-    """Create quality report (rows, cols, nulls)."""
-    logger.info(f"Generating data quality report for {name}")
+    """Build a dict with row count, column count, and per-column null counts."""
+    logger.info(f"Quality report for {name}")
     
     report = {
         "dataset_name": name,

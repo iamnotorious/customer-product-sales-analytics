@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructType = None, options: dict = None) -> DataFrame:
-    """Ingest Excel using pyspark.pandas (converts all to string first)."""
+    """Read an Excel file via pyspark.pandas, then cast to the given schema."""
     import pyspark.pandas as ps
 
     read_options = {"dtype": str}
@@ -39,7 +39,7 @@ def _ingest_excel_pandas(spark: SparkSession, source_path: str, schema: StructTy
     return spark_df
 
 def ingest_file(spark: SparkSession, file_format: str, source_path: str, schema: StructType = None, options: dict = None) -> DataFrame:
-    """Read data file into DataFrame."""
+    """Load a file (csv, json, or excel) into a DataFrame."""
     if file_format.lower() == "excel":
         return _ingest_excel_pandas(spark=spark, source_path=source_path, schema=schema, options=options)
 

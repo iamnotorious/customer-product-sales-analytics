@@ -10,7 +10,10 @@
 
 # COMMAND ----------
 
-dbutils.library.restartPython()
+try:
+    dbutils.library.restartPython()  # noqa: F821
+except NameError:
+    pass
 
 # COMMAND ----------
 
@@ -89,7 +92,7 @@ order_schema = StructType([
 ])
 
 def ingest_customers_data(*, spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
-    """Ingest customers."""
+    """Read Customer.xlsx into a DataFrame."""
     try:
         df = ingest_file(
             spark=spark_session, 
@@ -105,8 +108,7 @@ def ingest_customers_data(*, spark_session: SparkSession, source_path: str, sche
         raise Exception(f"Failed to ingest customers from {source_path}") from e
 
 def ingest_products_data(*, spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
-    """Ingest products."""
-    logger.info("Ingesting: Products")
+    """Read Products.csv into a DataFrame."""
     try:
         df = ingest_file(
             spark=spark_session, 
@@ -122,8 +124,7 @@ def ingest_products_data(*, spark_session: SparkSession, source_path: str, schem
         raise Exception(f"Failed to ingest products from {source_path}") from e
 
 def ingest_orders_data(*, spark_session: SparkSession, source_path: str, schema: StructType) -> DataFrame:
-    """Ingest orders."""
-    logger.info("Ingesting: Orders")
+    """Read Orders.json into a DataFrame."""
     try:
         df = ingest_file(
             spark=spark_session, 
@@ -139,37 +140,31 @@ def ingest_orders_data(*, spark_session: SparkSession, source_path: str, schema:
         raise Exception(f"Failed to ingest orders from {source_path}") from e
 
 def validate_bronze_data(*, df: DataFrame, name: str, key_columns: list):
-    """Validate data quality."""
-    logger.info(f"Validating: {name}")
+    """Run quality report and duplicate check on a Bronze DataFrame."""
+    logger.info(f"Validating {name}: starting quality checks")
     
-    # Generate quality report
     report = generate_data_quality_report(df=df, name=name)
-    logger.info(f"Rows: {report['row_count']}")
+    logger.info(f"Validating {name}: {report['row_count']} rows")
     
-    # Check for duplicates
     dup_report = check_duplicates(df=df, key_columns=key_columns)
     if dup_report['duplicate_count'] > 0:
-        logger.warning(f"Duplicates: {dup_report['duplicate_count']} in {name}")
+        logger.warning(f"Validating {name}: {dup_report['duplicate_count']} duplicates on {key_columns}")
 
 def merge_to_bronze(*, df: DataFrame, table_name: str, merge_keys: list):
-    """Merge data to Bronze (upsert)."""
+    """Upsert into Bronze table. Creates table on first run, merges after."""
     try:
         spark = SparkSession.getActiveSession()
-        
-        # Check if table exists
         table_exists = spark.catalog.tableExists(table_name)
         
         if not table_exists:
-            logger.info(f"Creating: {table_name}")
             write_data_to_table(df=df, mode="overwrite", table_name=table_name)
-            logger.info(f"Created: {table_name}")
+            logger.info(f"Created {table_name}")
         else:
-            logger.info(f"Merging: {table_name}")
             merge_data(df=df, table_name=table_name, merge_keys=merge_keys)
-            logger.info(f"Merged: {table_name}")
+            logger.info(f"Merged into {table_name}")
             
     except Exception as e:
-        logger.error(f"Merge failed: {table_name} -> {e}")
+        logger.error(f"Failed to write {table_name}: {e}")
         raise Exception(f"Failed to merge to {table_name}") from e
 
 # Execution

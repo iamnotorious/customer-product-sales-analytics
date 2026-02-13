@@ -2,19 +2,10 @@ from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, regexp_replace, when, lit, coalesce, round, year, to_date, current_timestamp, broadcast, concat
 
 def clean_names(df: DataFrame, column_name: str, apply_title_case: bool = False) -> DataFrame:
-    """
-    Cleans text by removing unwanted characters while preserving legitimate separators.
-    
-    Strategy:
-    1. Preserve only letters, spaces, and apostrophes
-    2. Remove special chars/digits as noise (merge adjacent text)
-    3. Preserve spaces that existed in original input
-    4. Merge fragmented text caused by special characters and digits
-    
-    Args:
-        df: Input DataFrame.
-        column_name: Column to clean.
-        apply_title_case: If True, applies proper title case (for names). Default False.
+    """Remove digits, special chars, and leetspeak from a name column.
+
+    Keeps letters, spaces, and apostrophes. Merges text fragments left
+    behind after stripping noise. Optionally applies title case.
     """
     from pyspark.sql.functions import trim, udf
     from pyspark.sql.types import StringType as SparkStringType
@@ -95,16 +86,10 @@ def clean_names(df: DataFrame, column_name: str, apply_title_case: bool = False)
     return df
 
 def clean_phone(df: DataFrame, column_name: str, remove_errors: bool = True) -> DataFrame:
-    """
-    Cleans phone numbers to format: (xxx) xxx-xxxx xEXT
-    Handles various formats, country codes (001), extensions, and removes errors.
-    
-    Examples:
-        "421.580.0902x9815" -> "(421) 580-0902 x9815"
-        "001-542-415-0246x314" -> "(542) 415-0246 x314"
-        "7185624866" -> "(718) 562-4866"
-        "#ERROR!" -> None
-        "-6181" -> None
+    """Normalize phone numbers to (xxx) xxx-xxxx [xEXT].
+
+    Strips 001 country code, extracts extensions, and returns None
+    for entries that are too short, negative, or marked as errors.
     """
     from pyspark.sql.functions import udf
     from pyspark.sql.types import StringType as SparkStringType
@@ -146,91 +131,47 @@ def clean_phone(df: DataFrame, column_name: str, remove_errors: bool = True) -> 
 
 
 def handle_nulls(df: DataFrame, columns: list, default_value: str = "N/A") -> DataFrame:
-    """
-    Fills null values in specified string columns with a default value.
-    """
+    """Fill nulls in the given columns with default_value."""
     fill_dict = {c: default_value for c in columns}
     return df.fillna(fill_dict)
 
 def to_snake_case(df: DataFrame) -> DataFrame:
-    """
-    Converts all column names in the DataFrame to snake_case.
-    """
+    """Lowercase all column names and replace spaces/hyphens with underscores."""
     for col_name in df.columns:
         new_name = col_name.strip().lower().replace(' ', '_').replace('-', '_').replace('/', '_')
         df = df.withColumnRenamed(col_name, new_name)
     return df
 
 def add_audit_columns(df: DataFrame, source_file: str = None) -> DataFrame:
-    """
-    Adds audit columns to a DataFrame for data lineage tracking.
-    
-    Columns added:
-        - created_at: Timestamp when the record was ingested.
-        - source_file: Path of the source file (only if provided).
-    """
+    """Add created_at timestamp and optional source_file for lineage."""
     df = df.withColumn("created_at", current_timestamp())
     if source_file:
         df = df.withColumn("source_file", lit(source_file))
     return df
 
 def deduplicate(df: DataFrame, key_columns: list = None) -> DataFrame:
-    """
-    Removes duplicate rows based on key columns.
-    If key_columns is not provided, deduplicates on all columns.
-    """
+    """Drop duplicate rows. Uses key_columns when provided, else all columns."""
     if key_columns:
         return df.dropDuplicates(key_columns)
     return df.dropDuplicates()
 
 def generate_surrogate_key(df: DataFrame, key_columns: list, sk_column_name: str = "sk") -> DataFrame:
-    """
-    Generates a deterministic surrogate key using MD5 hash of business key columns.
-    
-    Args:
-        df: Input DataFrame.
-        key_columns: Business key columns to hash.
-        sk_column_name: Name for the surrogate key column.
-    """
+    """Add a deterministic MD5 surrogate key derived from key_columns."""
     from pyspark.sql.functions import md5, concat_ws
     return df.withColumn(sk_column_name, md5(concat_ws("||", *[col(c) for c in key_columns])))
 
 def clean_customer_names(df: DataFrame, name_column: str = "customer_name") -> DataFrame:
-    """
-    Cleans customer name column by removing corruption and applying title case.
-    
-    Example:
-        "Gary567 Hansen" -> "Gary Hansen"
-        "C@thy Armstrong" -> "Cathy Armstrong"
-    """
+    """Clean the customer_name column and apply title case."""
     return clean_names(df, name_column, apply_title_case=True)
 
 
 def clean_customer_phones(df: DataFrame, phone_column: str = "phone") -> DataFrame:
-    """
-    Standardizes phone numbers to format: (xxx) xxx-xxxx xEXT
-    
-    Example:
-        "421.580.0902x9815" -> "(421) 580-0902 x9815"
-        "#ERROR!" -> None
-    """
+    """Normalize the phone column to (xxx) xxx-xxxx [xEXT] format."""
     return clean_phone(df, phone_column)
 
 
 def fill_missing_values(df: DataFrame, columns: list, default_value: str = "Unknown") -> DataFrame:
-    """
-    Fills null values in specified columns with a default value.
-    
-    Args:
-        df: Input DataFrame.
-        columns: List of columns to fill nulls.
-        default_value: Value to use for null replacement.
-    
-    Example:
-        Input: [("John", None), ("Jane", "USA")]
-        columns: ["country"]
-        Output: [("John", "Unknown"), ("Jane", "USA")]
-    """
+    """Fill nulls in columns with default_value (defaults to 'Unknown')."""
     return handle_nulls(df, columns, default_value)
 
 def join_dataframes(
@@ -240,10 +181,7 @@ def join_dataframes(
     join_type: str = "left",
     broadcast_right: bool = False
 ) -> DataFrame:
-    """
-    Joins two DataFrames on specified column.
-    Optionally broadcasts the right DataFrame for map-side join.
-    """
+    """Join two DataFrames. Broadcasts right side when flagged for map-side join."""
     if broadcast_right:
         return left_df.join(broadcast(right_df), join_on, join_type)
     return left_df.join(right_df, join_on, join_type)
@@ -251,9 +189,6 @@ def join_dataframes(
 
 
 def parse_date_col(df: DataFrame, date_col: str, date_format: str, output_col: str = None) -> DataFrame:
-    """
-    Parses a string date column to a proper DateType.
-    Expects valid date formats or environment configured to return null on error.
-    """
+    """Cast a string date column to DateType using the given format."""
     target_col = output_col if output_col else date_col
     return df.withColumn(target_col, to_date(col(date_col), date_format))
